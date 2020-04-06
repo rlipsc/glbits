@@ -8,6 +8,6 @@ Whilst `glbits` It is intended to be built upon, a ready to use example model re
 
     import glbits/modelrenderer
 
-Expected result from running `glbits` as the main module:
+Expected output from running `glbits` as the main module:
 
-![Expected output from running glbits as the main module](glbits.png "glBits output")
+![Expected output from running glbits as the main module](https://github.com/rlipsc/glbits/blob/master/glbits.PNG "glBits output")
