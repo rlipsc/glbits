@@ -43,6 +43,10 @@ template vec2*(x, y: float|float32): GLvectorf2 = [x.GLfloat, y]
 template vec3*(x, y, z: float|float32): GLvectorf3 = [x.GLfloat, y, z]
 template vec4*(r, g, b, a: float|float32): GLvectorf4 = [r.GLfloat, g, b, a]
 
+template vec2*(v: float|float32): GLvectorf2 = [v.GLfloat, v]
+template vec3*(v: float|float32): GLvectorf3 = [v.GLfloat, v, v]
+template vec4*(v: float|float32): GLvectorf4 = [v.GLfloat, v, v, v]
+
 #############
 # VBO Support
 #############
