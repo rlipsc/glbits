@@ -41,7 +41,7 @@ const
     layout(location = 2) in vec3 position;
     layout(location = 3) in vec3 scale;
     layout(location = 4) in float angle;
-    layout(location = 5) in float colour;
+    layout(location = 5) in vec4 colour;
 
     out vec4 col;
 
