@@ -47,6 +47,15 @@ template vec2*(v: float|float32): GLvectorf2 = [v.GLfloat, v]
 template vec3*(v: float|float32): GLvectorf3 = [v.GLfloat, v, v]
 template vec4*(v: float|float32): GLvectorf4 = [v.GLfloat, v, v, v]
 
+template mix*(x, y, a: float|GLfloat): float =
+  ## Mix two floats according to `a`.
+  x * (1 - a) + y * a
+
+proc mix*[N: static[int], T: array[N, GLfloat]](v1, v2: T, a: GLfloat): T {.inline.} =
+  ## Mix two arrays of floats together according to `a`.
+  for i in 0 ..< N:
+    result[i] = v1[i] * (1 - a) + v2[i] * a
+
 #############
 # VBO Support
 #############
