@@ -49,7 +49,7 @@ const
     {
       float c = cos(angle);
       float s = sin(angle);
-      mat2 m = mat2(c, -s, s, c);
+      mat2 m = mat2(c, s, -s, c);
       vec3 scaledModel = vec3(m * model.xy, model.z) * scale + position;
       gl_Position = vec4(scaledModel, 1.0f);
       col = vertexCol * colour;
