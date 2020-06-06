@@ -112,7 +112,7 @@ proc initVBO*[N: static[int]](data: openarray[array[0..N, GLfloat]]): VertexBuff
   result.addData(data)
 
 proc freeVBO*(vbo: var VertexBufferObject, disableVAA = false) =
-  if disableVAA: glDisableVertexAttribArray(vbo.index)
+  if disableVAA: glDisableVertexAttribArray(vbo.id)
   var buffId = vbo.id
   glDeleteBuffers(1, addr buffId)
   vbo.deallocate
