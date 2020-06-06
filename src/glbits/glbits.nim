@@ -135,7 +135,7 @@ proc updateGPU*(vbo: var VertexBufferObject, itemCount: int) =
     vbo.upload
   else:
     vbo.bindBuffer
-    assert(itemCount <= vbo.dataLen)
+    assert itemCount <= vbo.dataLen, "Exceeded capacity for vbo. Index: " & $vbo.index & ", max: " & $vbo.dataLen & ", item count requested: " & $itemCount
     let bytes = GLfloat.sizeOf() * (itemCount * vbo.dataUnitSize.toInt)
     glBufferSubData(GL_ARRAY_BUFFER, 0, bytes, vbo.rawData)
 
