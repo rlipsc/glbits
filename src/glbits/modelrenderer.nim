@@ -68,12 +68,14 @@ const
     }
     """
 
-# Access to the per-instance VBOs.
+# Short cut access to the per-instance VBOs.
 
 template positionVBO*(modelId: ModelId): untyped = models[modelId.int].vao.buffers[PositionBufferIndex]
 template scaleVBO*(modelId: ModelId): untyped = models[modelId.int].vao.buffers[ScaleBufferIndex]
 template rotationVBO*(modelId: ModelId): untyped = models[modelId.int].vao.buffers[RotationBufferIndex]
 template colVBO*(modelId: ModelId): untyped = models[modelId.int].vao.buffers[ColBufferIndex]
+
+# Type safe access to the underlying VBO data.
 
 template positionVBOArray*(modelId: ModelId): untyped = modelId.positionVBO.toArray(3)
 template scaleVBOArray*(modelId: ModelId): untyped = modelId.scaleVBO.toArray(3)
@@ -81,6 +83,8 @@ template rotationVBOArray*(modelId: ModelId): untyped = modelId.rotationVBO.toAr
 template colVBOArray*(modelId: ModelId): untyped = modelId.colVBO.toArray(4)
 
 proc modelCount*: int = models.len
+
+template modelByIndex*(index: int): ModelId = index.ModelId
 
 proc newProgram*(vertexGLSL, fragmentGLSL: string): ShaderProgramId =
   ## Create a new shader program.
@@ -141,16 +145,25 @@ proc updateInstance*(modelId: ModelId, index: int, item: ModelInstanceDetails) =
   modelId.rotationVBOArray[index] = [item.angle]
   modelId.colVBOArray[index] = item.col
 
+proc renderModel*(modelId: ModelId, count: Natural) =
+  ## Render all models/programs.
+  template model: untyped = models[modelId.int]
+  assert count in 0 .. model.vao.buffers[PositionBufferIndex].dataLen
+  programs[model.programId.int].program.activate
+
+  model.vao.bindArray
+  model.vao.buffers[VertexBufferIndex].updateGPU()
+  model.vao.buffers[VertexColBufferIndex].updateGPU()
+  #
+  model.vao.buffers[PositionBufferIndex].updateGPU(count)
+  model.vao.buffers[ScaleBufferIndex].updateGPU(count)
+  model.vao.buffers[RotationBufferIndex].updateGPU(count)
+  model.vao.buffers[ColBufferIndex].updateGPU(count)
+
+  model.vao.buffers[VertexBufferIndex].render(count)
+
 proc renderModels* =
   ## Render all models/programs.
-  for model in models.mItems:
-    programs[model.programId.int].program.activate
-    model.vao.bindArray
-    model.vao.buffers[VertexBufferIndex].updateGPU
-    model.vao.buffers[VertexColBufferIndex].updateGPU
-    model.vao.buffers[PositionBufferIndex].updateGPU
-    model.vao.buffers[ScaleBufferIndex].updateGPU
-    model.vao.buffers[RotationBufferIndex].updateGPU
-    model.vao.buffers[ColBufferIndex].updateGPU
-    model.vao.buffers[VertexBufferIndex].render(model.vao.buffers[PositionBufferIndex].dataLen)
-
+  for modelIndex in 0 ..< models.len:
+    let maxSize = models[modelIndex].vao.buffers[PositionBufferIndex].dataLen
+    modelIndex.ModelId.renderModel(maxSize)
