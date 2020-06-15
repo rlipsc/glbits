@@ -128,6 +128,8 @@ proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3]
   models.add ModelStorage(programId: shaderProgramId, vao: vao)
   result = models.high.ModelId
 
+proc shaderProgram*(shaderProgramId: ShaderProgramId): ShaderProgram = programs[shaderProgramId.int].program
+
 proc setMaxInstanceCount*(modelId: ModelId, count: int) =
   ## Does not set current instance counts.
   modelId.positionVBO.allocate(count, fcThree)
