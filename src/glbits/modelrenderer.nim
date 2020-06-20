@@ -86,6 +86,8 @@ proc modelCount*: int = models.len
 
 template modelByIndex*(index: int): ModelId = index.ModelId
 
+template vao*(modelId: ModelId): VertexArrayObject = models[modelId.int].vao
+
 proc newProgram*(vertexGLSL, fragmentGLSL: string): ShaderProgramId =
   ## Create a new shader program.
   var sps: ShaderProgramStorage
