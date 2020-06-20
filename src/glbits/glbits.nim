@@ -1,4 +1,4 @@
-import opengl
+import opengl, utils
 export opengl
 
 type
@@ -38,23 +38,6 @@ type
     id*: GLuint
     linkedShaders*: seq[Shader]
     attachments*: seq[GLenum]
-
-template vec2*(x, y: float|float32): GLvectorf2 = [x.GLfloat, y]
-template vec3*(x, y, z: float|float32): GLvectorf3 = [x.GLfloat, y, z]
-template vec4*(r, g, b, a: float|float32): GLvectorf4 = [r.GLfloat, g, b, a]
-
-template vec2*(v: float|float32): GLvectorf2 = [v.GLfloat, v]
-template vec3*(v: float|float32): GLvectorf3 = [v.GLfloat, v, v]
-template vec4*(v: float|float32): GLvectorf4 = [v.GLfloat, v, v, v]
-
-template mix*(x, y, a: float|GLfloat): float =
-  ## Mix two floats according to `a`.
-  x * (1 - a) + y * a
-
-proc mix*[N: static[int], T: array[N, GLfloat]](v1, v2: T, a: GLfloat): T {.inline.} =
-  ## Mix two arrays of floats together according to `a`.
-  for i in 0 ..< N:
-    result[i] = v1[i] * (1 - a) + v2[i] * a
 
 #############
 # VBO Support

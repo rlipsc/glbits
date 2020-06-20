@@ -1,4 +1,4 @@
-import glbits/modelRenderer, random
+import modelRenderer, random, utils
 
 from math import TAU, cos, sin
 
