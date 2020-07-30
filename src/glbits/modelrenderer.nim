@@ -7,13 +7,8 @@ import glbits
 export glbits
 
 type
-  ShaderProgramId* = distinct int
   ModelId* = distinct int
   ModelInstanceDetails* = tuple[position: GLvectorf3, scale: GLvectorf3, angle: GLfloat, col: GLvectorf4]
-
-  ShaderProgramStorage = object
-    vShader, fShader: Shader
-    program: ShaderProgram
 
   ModelStorage = object
     programId: ShaderProgramId
@@ -27,9 +22,7 @@ const
   RotationBufferIndex* = 4
   ColBufferIndex* = 5
 
-var
-  programs: seq[ShaderProgramStorage]
-  models: seq[ModelStorage]
+var models: seq[ModelStorage]
 
 const
   vertexGLSL = 
@@ -88,37 +81,23 @@ template modelByIndex*(index: int): ModelId = index.ModelId
 
 template vao*(modelId: ModelId): VertexArrayObject = models[modelId.int].vao
 
-proc newProgram*(vertexGLSL, fragmentGLSL: string): ShaderProgramId =
-  ## Create a new shader program.
-  var sps: ShaderProgramStorage
-  sps.vShader = newShader(GL_VERTEX_SHADER, vertexGLSL)
-  sps.fShader = newShader(GL_FRAGMENT_SHADER, fragmentGLSL)
-  sps.program = newShaderProgram()
-  sps.program.attach sps.vShader
-  sps.program.attach sps.fShader
-  sps.program.link
-  let errorMsg = sps.program.log
-  doAssert errorMsg == "", "Error linking shader program:\n" & errorMsg 
-  programs.add sps
-  result = programs.high.ShaderProgramId
-
-proc newModelRenderer*: ShaderProgramId = newProgram(vertexGLSL, fragmentGLSL)
+proc newModelRenderer*: ShaderProgramId = newShaderProgramId(vertexGLSL, fragmentGLSL)
 
 proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3], colours: openarray[GLvectorf4]): ModelId =
   ## Create a new model attached to a shader program.
   var
     vao = initVAO()
-    model = initVBO(vertices)
-    vertCols = initVBO(colours)
-    positions = initVBO(0, fcThree)
-    scales = initVBO(0, fcThree)
-    rotations = initVBO(0, fcOne)
-    colours = initVBO(0, fcFour)
+    model =     initVBO(VertexBufferIndex.GLuint, vertices)
+    vertCols =  initVBO(VertexColBufferIndex.GLuint, colours)
+    positions = initVBO(PositionBufferIndex.GLuint, 0, fcThree)
+    scales =    initVBO(ScaleBufferIndex.GLuint, 0, fcThree)
+    rotations = initVBO(RotationBufferIndex.GLuint, 0, fcOne)
+    colours =   initVBO(ColBufferIndex.GLuint, 0, fcFour)
 
-  positions.bufferType = btPerInstance
-  scales.bufferType = btPerInstance
-  rotations.bufferType = btPerInstance
-  colours.bufferType = btPerInstance
+  positions.divisor = bdPerInstance
+  scales.divisor = bdPerInstance
+  rotations.divisor = bdPerInstance
+  colours.divisor = bdPerInstance
 
   vao.add model
   vao.add vertCols
@@ -129,8 +108,6 @@ proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3]
 
   models.add ModelStorage(programId: shaderProgramId, vao: vao)
   result = models.high.ModelId
-
-proc shaderProgram*(shaderProgramId: ShaderProgramId): ShaderProgram = programs[shaderProgramId.int].program
 
 proc setMaxInstanceCount*(modelId: ModelId, count: int) =
   ## Does not set current instance counts.
@@ -149,13 +126,18 @@ proc updateInstance*(modelId: ModelId, index: int, item: ModelInstanceDetails) =
   modelId.rotationVBOArray[index] = [item.angle]
   modelId.colVBOArray[index] = item.col
 
-proc renderModel*(modelId: ModelId, count: Natural) =
+proc programId*(modelId: ModelId): ShaderProgramId =
+  models[modelId.int].programId
+
+template bindModel(modelId: ModelId) =
+  template model: untyped = models[modelId.int]
+  programs[model.programId.int].activate
+  model.vao.bindArray
+
+proc renderModelCore(modelId: ModelId, count: Natural) =
   ## Render all models/programs.
   template model: untyped = models[modelId.int]
   assert count in 0 .. model.vao.buffers[PositionBufferIndex].dataLen
-  programs[model.programId.int].program.activate
-
-  model.vao.bindArray
   model.vao.buffers[VertexBufferIndex].updateGPU()
   model.vao.buffers[VertexColBufferIndex].updateGPU()
   #
@@ -166,8 +148,58 @@ proc renderModel*(modelId: ModelId, count: Natural) =
 
   model.vao.buffers[VertexBufferIndex].render(count)
 
+template renderModelSetup*(modelId: ModelId, count: Natural, setup: untyped) =
+  mixin bindModel
+  modelId.bindModel
+  template model: auto = modelId
+  setup
+  renderModelCore(modelId, count)
+
+proc renderModel*(modelId: ModelId, count: Natural) =
+  ## Render all models/programs.
+  modelId.bindModel
+  renderModelCore(modelId, count)
+
 proc renderModels* =
   ## Render all models/programs.
   for modelIndex in 0 ..< models.len:
     let maxSize = models[modelIndex].vao.buffers[PositionBufferIndex].dataLen
     modelIndex.ModelId.renderModel(maxSize)
+
+import random, utils
+from math import TAU, cos, sin
+
+proc makeCircleModel*(shaderProgram: ShaderProgramId, triangles: int, insideCol, outsideCol: GLvectorf4, roughness = 0.0, maxInstances = 0): ModelId =
+  ## Create a coloured model with `triangles` sides.
+  let angleInc = TAU / triangles.float
+  const radius = 1.0
+  var
+    model = newSeq[GLvectorf3](triangles * 3)
+    colours = newSeq[GLvectorf4](triangles * 3)
+    curAngle = 0.0
+    vertex = 0
+    points = newSeq[float](triangles)
+
+  for i in 0 ..< points.len:
+    points[i] = radius + rand(roughness)
+  
+  for i in 0 ..< triangles:
+
+    let r1 = points[i]
+    model[vertex] = vec3(r1 * cos(curAngle), r1 * sin(curAngle), 0.0)
+    colours[vertex] = outsideCol
+
+    model[vertex + 1] = vec3(0.0, 0.0, 0.0)
+    colours[vertex + 1] = insideCol
+
+    curAngle += angleInc
+    
+    let r2 = points[(i + 1) mod triangles]
+    model[vertex + 2] = vec3(r2 * cos(curAngle), r2 * sin(curAngle), 0.0)
+    colours[vertex + 2] = outsideCol
+    vertex += 3
+
+  let r = newModel(shaderProgram, model, colours)
+  if maxInstances > 0:
+    r.setMaxInstanceCount(maxInstances)
+  r
