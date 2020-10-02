@@ -1,6 +1,6 @@
 import opengl, macros, random
 
-from math import round, `mod`, sqrt, cos, sin, arcTan2
+from math import round, `mod`, sqrt, cos, sin, arcTan2, PI, TAU, floor
 
 #########################################################################
 # Utility routines: swizzling, named access to indexes, and operators for
@@ -130,8 +130,12 @@ template mix*(x, y, a: float|GLfloat): float =
   ## Mix two floats according to `a`.
   x * (1.0 - a) + y * a
 
-template assertNormalised(a: GLfloat) =
+template assertNormalised*(a: GLfloat) =
   assert a in 0.0..1.0, "Value out of range: got " & $a & ", expected 0..1"
+
+template assertNormalised*(v: GLVector) =
+  for item in v:
+    item.assertNormalised
 
 func mix*[N: static[int], T: array[N, GLfloat]](v1, v2: T, a: GLfloat): T {.inline.} =
   ## Mix two arrays of floats together according to `a`.
@@ -166,11 +170,15 @@ func smootherStep*[T: Somefloat](x, y, a: T): T {.inline.} =
 # Normals
 #########
 
-func normal*[T: GLVector](a: T): T {.inline.} =
+func normal*[T: GLVector](a: T): T {.inline, noInit.} =
   let mag = a.length
   if mag > 0:
-    for i, v in a:
+    for i in 0 .. a.high:
+      {.unroll.}
       result[i] = a[i] / mag
+  else:
+    result[0] = 1.0
+    result[1] = 0.0
 
 proc triangleNormal*(v1, v2, v3: GLVectorf3): GLvectorf3 =
   ## Calculates the surface normal of the triangle made by the three vertices
@@ -196,7 +204,7 @@ proc triangleNormals*(vertices: openarray[GLvectorf3]): seq[GLvectorf3] =
     p = i * 3
     triNorms[i] = triangleNormal(vertices[p], vertices[p + 1], vertices[p + 2])
 
-  # We now want to sum and average surrounding face normals to get the vertex normals
+  # We now want to sum and average surrounding face normals to get the vertex normals.
   var tris: int
   for i in 0 ..< vertices.len:
     result[i] = triNorms[i div 3]
@@ -247,6 +255,18 @@ func rotate90R*(original: GLVectorf2): GLVectorf2 = vec2(-original[1], original[
 template vector*(angle: float, length: float): GLvectorf2 = [(length * cos(angle)).GLfloat, length * sin(angle)]
 
 proc angleOf*(vec: GLVectorf2): float = arcTan2 vec.y, vec.x
+
+func angleDiffAbs*(a, b: float): float =
+  ## Compare two angles and return the absolute difference.
+  ## Angles must be within 0..TAU.
+  PI - abs(abs(a - b) - PI)
+
+func angleDiff*(a, b: float): float =
+  ## Compare two angles and return the signed difference.
+  ## Angles must be within 0..TAU.
+  result = (a - b) + PI
+  result = result / TAU
+  result = ((result - floor(result)) * TAU) - PI
 
 ################################
 # Line traversal / interpolation
