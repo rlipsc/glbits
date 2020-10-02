@@ -14,6 +14,13 @@ type FrameBufferFormat* = enum fbfFloat, fbfInt
 ## Shortcut to ref attachment
 template colourAttachment*(i: int): GLuint = (GL_COLOR_ATTACHMENT0.int + i).GLuint
 
+func toString(attachments: openarray[GLEnum or GLuint]): string =
+  var s: string
+  for i, a in attachments:
+    s &= $(a.int - GL_COLOR_ATTACHMENT0.int)
+    if i < attachments.high: s &= ", "
+  s
+
 proc initFrameBuffer*(fb: var FrameBuffer, width, height: int, bufferTypes: openarray[FrameBufferFormat]) =
   ## Create a set of buffers for the GPU to read/write with.
   glGenFramebuffers(1, fb.frameBufferId.addr)
@@ -67,14 +74,12 @@ proc initFrameBuffer*(fb: var FrameBuffer, width, height: int, bufferTypes: open
 template bindFrameBuffer*(fb: FrameBuffer): untyped =
   glBindFramebuffer(GL_FRAMEBUFFER, fb.frameBufferId)
   debugMsg &"Bound to frame [buffer {fb.frameBufferId}]"
-
+  mixin toString
   # set number of output buffers
   when defined(debugGL):
-    var s: string
-    for i, a in fb.attachments:
-      s &= $(a.int - GL_COLOR_ATTACHMENT0.int)
-      if i < fb.attachments.high: s &= ", "
-    let str = &"Setting draw buffers for [frame buffer {fb.frameBufferId}] to [" & s & "]"
+    let
+      bStr = fb.attachments.toString
+      str = &"Setting draw buffers for [frame buffer {fb.frameBufferId}] to [" & bStr & "]"
     debugMsg str
   glDrawBuffers(fb.count.GLsizei, cast[ptr GLenum](fb.attachments[0].addr))
 
@@ -84,7 +89,8 @@ proc setAttachments*(fb: var FrameBuffer, attachments: openarray[GLuint]) =
   fb.attachments.setLen attachments.len
   for idx, value in attachments:
     fb.attachments[idx] = value
-  debugMsg &"Setting draw buffers for [frame buffer {fb.frameBufferId}] to [{fb.attachments}]"
+  when defined(debugGL):
+    debugMsg &"Setting draw buffers for [frame buffer {fb.frameBufferId}] to [{fb.attachments.toString}]"
   glDrawBuffers(fb.count.GLsizei, cast[ptr GLenum](fb.attachments[0].addr))
 
 proc clear*(fb: var FrameBuffer) =
