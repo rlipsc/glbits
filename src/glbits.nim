@@ -1,2 +1,2 @@
-import glbits/[glbits, uniforms, utils, framebuffers]
-export glbits, uniforms, utils, framebuffers
+import glbits/[glbits, uniforms, utils, framebuffers, textures]
+export glbits, uniforms, utils, framebuffers, textures
