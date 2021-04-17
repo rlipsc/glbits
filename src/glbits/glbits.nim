@@ -313,7 +313,6 @@ import strformat
 proc add*(varray: var VertexArrayObject, vbo: var VertexBufferObject) =
   varray.bindArray
   assert vbo.initialised
-  #vbo.index = varray.buffers.len.GLuint
   varray.buffers.add(vbo)
 
   # Set up stride, etc.
@@ -326,7 +325,7 @@ proc add*(varray: var VertexArrayObject, vbo: var VertexBufferObject) =
 
   if vbo.divisor != bdPerVertex:
     glVertexAttribDivisor(vbo.index, 1)
-  debugMsg &"Set divisor for attribute {vbo.index.int} to {vbo.divisor}"
+    debugMsg &"Set divisor for attribute {vbo.index.int} to {vbo.divisor}"
 
   # Create the opengl data store, this allocates memory on the GPU.
   vbo.upload

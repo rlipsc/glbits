@@ -71,37 +71,70 @@ template length*(v: openarray[GLfloat]): float = sqrt(v.sqrLen)
 macro makeOps*(ty: typedesc[array]): untyped =
   ## Builds `+`, `-`, `*`, `/`, `+=`, `-=`, `*=`, and `/=` operators,
   ## inversion with `-`, and `clamp` for array types.
+  ## 
+  ## Usage:
+  ## .. code-block:: nim
+  ##    type
+  ##      Arr3 = array[3, int]
+  ##      Arr4 = array[0..3, int]
+  ##    makeOps Arr3
+  ##    makeOps Arr4
+  ##    assert [1, 2, 3] + [1, 2, 3] + 2 == [4, 6, 8]
+  ##    assert [1, 2, 3, 4] - 2 + [1, 2, 3, 4] == [0, 2, 4, 6]
+  ## 
+  ##    var a: Arr3
+  ##    a += 10
+  ##    a *= [2, 3, 4]
+  ##    a = a.clamp(25, 35)
+  ##    assert a == [25, 30, 35]
+  ##    assert -a == [-25, -30, -35]
+
   let
     impl = ty.getImpl
-    len = impl[2][1][2].intVal
+  
+  let
+    len =
+      if impl[2][1].kind == nnkIntLit:
+        impl[2][1].intVal - 1
+      else:
+        impl[2][1].expectKind nnkInfix
+        impl[2][1][2].intVal
+    sym = impl[2][2]
+    rootTypeStr = $(sym.getType())
     a = ident "a"
     b = ident "b"
+    ops = 
+      if rootTypeStr == "int":
+        @["+", "-", "*"]
+      else:
+        @["+", "-", "*", "/"]
+
   result = newStmtList()
-  for opStr in ["+", "-", "*", "/"]:
+  for opStr in ops:
     # Each array operation is the same operator (in-place or not) on each element.
     let
       op = nnkAccQuoted.newTree(ident opStr)
       opEq = nnkAccQuoted.newTree(ident opStr & "=")
     var
       opTyTy = nnkBracket.newTree()
-      opTyFloat = nnkBracket.newTree()
-      opFloatTy = nnkBracket.newTree()
+      opTyVal = nnkBracket.newTree()
+      opValTy = nnkBracket.newTree()
       opEqTy = newStmtList()
-      opEqFloat = newStmtList()
+      opEqVal = newStmtList()
       
     for i in 0 .. len:
       opTyTy.add(   quote do: `op`(`a`[`i`], `b`[`i`]))
-      opTyFloat.add(quote do: `op`(`a`[`i`], `b`))
-      opFloatTy.add(quote do: `op`(`a`, `b`[`i`]))
+      opTyVal.add(quote do: `op`(`a`[`i`], `b`))
+      opValTy.add(quote do: `op`(`a`, `b`[`i`]))
       opEqTy.add(   quote do: `opEq`(`a`[`i`], `b`[`i`]))
-      opEqFloat.add(quote do: `opEq`(`a`[`i`], `b`))
+      opEqVal.add(quote do: `opEq`(`a`[`i`], `b`))
       
     result.add(quote do:
       func `op`*(`a`, `b`: `ty`): `ty` {.inline,noInit.} = `opTyTy`
-      func `op`*(`a`: `ty`, `b`: GLfloat): `ty` {.inline,noInit.}  = `opTyFloat`
-      func `op`*(`a`: GLfloat, `b`: `ty`): `ty` {.inline,noInit.}  = `opFloatTy`
+      func `op`*(`a`: `ty`, `b`: `sym`): `ty` {.inline,noInit.}  = `opTyVal`
+      func `op`*(`a`: `sym`, `b`: `ty`): `ty` {.inline,noInit.}  = `opValTy`
       func `opEq`*(`a`: var `ty`, `b`: `ty`) {.inline,noInit.} = `opEqTy`
-      func `opEq`*(`a`: var `ty`, `b`: GLfloat) {.inline,noInit.}  = `opEqFloat`
+      func `opEq`*(`a`: var `ty`, `b`: `sym`) {.inline,noInit.}  = `opEqVal`
     )
   # Inversion and clamp operator.
   var
@@ -115,9 +148,9 @@ macro makeOps*(ty: typedesc[array]): untyped =
     opClamp.add(quote do: clamp(`v`[`i`], `a`, `b`) )
   result.add(quote do:
     func `invOp`*(`a`: `ty`): `ty` = `opInv`
-    func clamp*(`v`: `ty`, `a`, `b`: GLfloat): `ty` {.inline,noInit.} = `opClamp`
+    func clamp*(`v`: `ty`, `a`, `b`: `sym`): `ty` {.inline,noInit.} = `opClamp`
   )
-
+  
 makeOps GLvectorf2
 makeOps GLvectorf3
 makeOps GLvectorf4
@@ -254,7 +287,7 @@ func rotate90R*(original: GLVectorf2): GLVectorf2 = vec2(-original[1], original[
 
 template vector*(angle: float, length: float): GLvectorf2 = [(length * cos(angle)).GLfloat, length * sin(angle)]
 
-proc angleOf*(vec: GLVectorf2): float = arcTan2 vec.y, vec.x
+proc toAngle*(vec: GLVectorf2): float = arcTan2 vec.y, vec.x
 
 func angleDiffAbs*(a, b: float): float =
   ## Compare two angles and return the absolute difference.
@@ -344,4 +377,24 @@ template forElectricLine*(x1, y1, x2, y2: float|GLfloat, steps: int, variance: f
 
       xCoord = lineXCoord + normal[0] * curOffset
       yCoord = lineYCoord + normal[1] * curOffset
+
+when isMainModule:
+  import unittest
+
+  type
+    Arr3 = array[3, int]
+    Arr4 = array[0..3, int]
+  makeOps Arr3
+  makeOps Arr4
+
+  suite "Utilities":
+    test "makeOps":
+      check [1, 2, 3] + [1, 2, 3] + 2 == [4, 6, 8]
+      check [1, 2, 3, 4] - 2 + [1, 2, 3, 4] == [0, 2, 4, 6]
+      var a: Arr3
+      a += 10
+      a *= [2, 3, 4]
+      a = a.clamp(25, 35)
+      check a == [25, 30, 35]
+      check -a == [-25, -30, -35]
 
