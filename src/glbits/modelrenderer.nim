@@ -156,7 +156,7 @@ template renderModelSetup*(modelId: ModelId, count: Natural, setup: untyped) =
   renderModelCore(modelId, count)
 
 proc renderModel*(modelId: ModelId, count: Natural) =
-  ## Render all models/programs.
+  ## Render a particular model.
   modelId.bindModel
   renderModelCore(modelId, count)
 
@@ -203,3 +203,31 @@ proc makeCircleModel*(shaderProgram: ShaderProgramId, triangles: int, insideCol,
   if maxInstances > 0:
     r.setMaxInstanceCount(maxInstances)
   r
+
+type
+  Coordinate2d = concept c
+    c.x is SomeFloat
+    c.y is SomeFloat
+
+proc makePolyModel*[T: Coordinate2d](shaderProgram: ShaderProgramId, verts: openarray[T], cols: openarray[GLvectorf4], maxInstances = 0): ModelId =
+  ## Create a polygon model.
+  assert verts.len == cols.len,
+    "makePolyModel: 'verts' (length " & $verts.len & ") and 'cols' (length " & $cols.len &
+    ") must be of the same length to create a model"
+  assert verts.len > 0, "makePolyModel: no vertices supplied"
+
+  when T isnot GLvectorf3:
+    var model = newSeq[GLvectorf3](verts.len)
+    for i, vert in verts:
+      when compiles(vert.z):
+        model[i] = vec3(vert.x, vert.y, vert.z)
+      else:
+        model[i] = vec3(vert.x, vert.y, 0.0)
+
+    result = newModel(shaderProgram, model, cols)
+  else:
+    # Data is already in the right format.
+    result = newModel(shaderProgram, verts, cols)
+
+  if maxInstances > 0:
+    result.setMaxInstanceCount(maxInstances)

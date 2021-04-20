@@ -28,20 +28,13 @@ type
   ColModel3d* = seq[(Vertex3d, array[4, GLFloat])]
 
   VertexBufferObject* = object
-    ## Use the id to bind to the VBO.
-    id*: GLuint
-    ## Whether this buffer processes by vertex or instance.
-    divisor*: BufferDivisor
-    ## What this buffer represents.
-    target*: BufferTarget
-    ## Pointer to the buffer's data. Use `asArray` to access.
-    rawData*: pointer
-    ## Size of each `unit of data` as the number of GLfloats.
-    dataUnitSize*: GLFloatCount
-    ## The maximum number of 'units of data'.
-    dataLen*: Natural
-    ## Index into parent VAO `buffers`.
-    index*: GLuint
+    id*: GLuint ## Use the id to bind to the VBO.
+    divisor*: BufferDivisor ## Whether this buffer processes by vertex or instance.
+    target*: BufferTarget ## What this buffer represents.
+    rawData*: pointer ## Pointer to the buffer's data. Use `asArray` to access.
+    dataUnitSize*: GLFloatCount ## Size of each `unit of data` as the number of GLfloats.
+    dataLen*: Natural ## The maximum number of 'units of data'.
+    index*: GLuint    ## Index into parent VAO `buffers`.
     initialised*: bool  
     resize: bool
     changed: bool
@@ -103,9 +96,9 @@ proc `$`*(bufferTarget: BufferTarget): string =
   of btQueryResultBuffer: "GL_QUERY_BUFFER"
   of btAtomicCounterStorage: "GL_ATOMIC_COUNTER_BUFFER"
 
-#############
+#------------
 # VBO Support
-#############
+#------------
 
 proc bindBuffer*(buffer: VertexBufferObject, target: BufferTarget) {.inline.} =
   ## Use this buffer as this target
@@ -273,9 +266,9 @@ proc `$`*(buffer: VertexBufferObject): string =
   result &= "]"
 
 
-####################
+#-------------------
 # Attributes support
-####################
+#-------------------
 
 proc setInfo*(index: Attribute, size, stride, offset: int, glType = cGL_FLOAt, normalised = false) =
   glVertexAttribPointer(index.GLuint, size.GLint, glType, glBool(normalised), stride.GLsizei, cast[pointer](offset))                                   # position
@@ -293,9 +286,9 @@ template enableAttributes*(v: HSlice[system.int, system.int]): untyped =
   for i in v:
     glEnableVertexAttribArray(i.GLuint)
 
-#############################
+#----------------------------
 # Vertex array object support
-#############################
+#----------------------------
 
 proc bindArray*(varray: VertexArrayObject) =
   glBindVertexArray(varray.id)
@@ -355,9 +348,9 @@ proc `$`*(varray: VertexArrayObject): string =
     result &= $varray.buffers[i] & "\n"
   result &= ">"
 
-################
+#---------------
 # Shader support
-################
+#---------------
 
 proc logShader*(shaderId: GLuint) =
   var length: GLint = 0
@@ -404,9 +397,9 @@ proc detach*(program: GLuint, shaderId: GLuint) =
   glDetachShader(program, shaderId)
   debugMsg &"Detaching shader {shaderId}"
 
-#################
+#----------------
 # Program support
-#################
+#----------------
 
 proc newShaderProgram*(sp: var ShaderProgram, vertexMode = GL_TRIANGLES) =
   ## Create a shader program.
@@ -551,11 +544,11 @@ template withProgram*(program: ShaderProgram, actions: untyped): untyped =
   program.activate
   actions
 
-#######################################################
+#------------------------------------------------------
 # ShaderProgramId, a distinct id representing a program
 # This is just an index into an array of ShaderPrograms
 # to avoid passing around the shader data.
-#######################################################
+#------------------------------------------------------
 
 var programs*: seq[ShaderProgram]
 
@@ -610,9 +603,9 @@ template renderWith*(programId: ShaderProgramId, vao: VertexArrayObject, modelBu
   debugMsg "Drawing " & $instances & " models of " & $modelBuf.dataLen.int & " vertices"
   glDrawArraysInstanced(programId.program.vertexMode, 0, modelBuf.dataLen.GLsizei, instances.GLsizei)
 
-######
+#-----
 # Misc
-######
+#-----
 
 proc isShader*(id: GLuint): bool = glIsShader(id)
 proc isProgram*(id: GLuint): bool = glIsProgram(id)
@@ -691,9 +684,9 @@ proc activateAllAttributes*(programId: GLuint, report = false) =
     glEnableVertexAttribArray(attr.id.GLuint)
     if report: echo " ", attr
 
-######
+#-----
 # Demo
-######
+#-----
 
 when isMainModule:
   # This demo assumes SDL2.dll is in the current working directory.

@@ -2,10 +2,10 @@ import opengl, macros, random
 
 from math import round, `mod`, sqrt, cos, sin, arcTan2, PI, TAU, floor
 
-#########################################################################
+#------------------------------------------------------------------------
 # Utility routines: swizzling, named access to indexes, and operators for
 # basic math on GL vectors.
-#########################################################################
+#------------------------------------------------------------------------
 
 type GLVector* = GLvectorf2 or GLvectorf3 or GLvectorf4
 
@@ -73,6 +73,7 @@ macro makeOps*(ty: typedesc[array]): untyped =
   ## inversion with `-`, and `clamp` for array types.
   ## 
   ## Usage:
+  ## 
   ## .. code-block:: nim
   ##    type
   ##      Arr3 = array[3, int]
@@ -155,9 +156,9 @@ makeOps GLvectorf2
 makeOps GLvectorf3
 makeOps GLvectorf4
 
-######################################################################################
+#-------------------------------------------------------------------------------------
 # Mix and step support: Linear & Hermite interpolation over GLfloat values and arrays.
-######################################################################################
+#-------------------------------------------------------------------------------------
 
 template mix*(x, y, a: float|GLfloat): float =
   ## Mix two floats according to `a`.
@@ -199,9 +200,9 @@ func smootherStep*[T: Somefloat](x, y, a: T): T {.inline.} =
   let t = a * a * a * (a * (6.0 * a - 15.0) + 10.0)
   mix(x, y, t)
 
-#########
+#--------
 # Normals
-#########
+#--------
 
 func normal*[T: GLVector](a: T): T {.inline, noInit.} =
   let mag = a.length
@@ -251,9 +252,9 @@ proc triangleNormals*(vertices: openarray[GLvectorf3]): seq[GLvectorf3] =
       result[i] = result[i] / tris.float
     result[i] = result[i].normal 
 
-############
+#-----------
 # Misc utils
-############
+#-----------
 
 proc constrain*(v: var openarray[GLVector], maxLength: float) =
   ## Vector cannot go over maxLength but retains angle.
@@ -301,9 +302,9 @@ func angleDiff*(a, b: float): float =
   result = result / TAU
   result = ((result - floor(result)) * TAU) - PI
 
-################################
+#-------------------------------
 # Line traversal / interpolation
-################################
+#-------------------------------
 
 template forLine*(x1, y1, x2, y2: float|GLfloat, steps: int, actions: untyped): untyped =
   ## Interpolate between two points in a line.
