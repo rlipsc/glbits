@@ -10,4 +10,4 @@ Whilst `glbits` It is intended to be built upon, a ready to use example model re
 
 Expected output from running `glbits` as the main module:
 
-![Expected output from running glbits as the main module](https://github.com/rlipsc/glbits/blob/media/glbits.webm "glBits output")
+![Expected output from running glbits as the main module](https://github.com/rlipsc/glbits/blob/media/glbits.mp4 "glBits output")
