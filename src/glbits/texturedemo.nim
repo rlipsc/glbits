@@ -36,7 +36,7 @@ proc limitFrameRate(frameTime: var uint32, target: uint32) =
     delay(frameTime - now) # Delay to maintain steady frame rate
   frameTime += target
 
-proc createBallTexture*(texture: var GLTexture, w, h = 1024) =
+proc createBallTexture(texture: var GLTexture, w, h = 120) =
   ## Create a ball texture.
   texture.initTexture(w, h)
 
@@ -46,27 +46,19 @@ proc createBallTexture*(texture: var GLTexture, w, h = 1024) =
       diffY = y2 - y1
     result = sqrt((diffX * diffX) + (diffY * diffY))
 
-  var
-    ti: int
-    d: float
+  let
     centre = [texture.width / 2, texture.height / 2]
-    diff: array[2, float]
-    normD, col: GLfloat
-  let maxDist = dist(centre[0], centre[1], texture.width.float, texture.height.float) / 2
+    maxDist = dist(centre[0], centre[1], texture.width.float, texture.height.float)
 
   for y in 0 ..< texture.height:
     for x in 0 ..< texture.width:
-      ti = texture.index(x, y)
-      diff = [centre[0] - x.float, centre[1] - y.float]
-      d = sqrt((diff[0] * diff[0]) + (diff[1] * diff[1]))
-      normD = d / maxDist
       let
-        lowestBrightness = 0.7'f32
-        edgeDist = max(0.0'f32, 1.0'f32 - normD)
-      col = edgeDist * rand(lowestBrightness .. clamp(edgeDist, lowestBrightness, 1.0))
-      #col = smoothStep(0.0, 1.0, col)
-      col = smootherStep(0.0, 1.0, col)
-      texture.data[ti] = vec4(col, col, col, if normD < 0.8: 1.0 else: 0.0)
+        ti = texture.index(x, y)
+        diff = [centre[0] - x.float, centre[1] - y.float]
+        d = sqrt((diff[0] * diff[0]) + (diff[1] * diff[1]))
+        normD = d / maxDist
+        edgeDist = smootherStep(1.0, 0.0, normD)
+      texture.data[ti] = vec4(edgeDist, edgeDist, edgeDist, edgeDist)
 
 proc mainLoop() =
   let targetFramePeriod: uint32 = 20 # 20 milliseconds corresponds to 50 fps
@@ -96,7 +88,8 @@ proc mainLoop() =
   # Scatterings of instances across the screen.
   const
     screenRange = -2.0 .. 2.0
-    sizeRange = 0.005 .. 0.02
+    sizeRange = 0.005 .. 0.0125
+
   texBillboard.addItems(max - 1):
     curItem.positionData =  vec4(rand(screenRange), rand(screenRange), 0.0, 1.0)
     #curItem.colour =        vec4(1.0, rand(0.5), rand(0.2), 1.0)
@@ -104,8 +97,10 @@ proc mainLoop() =
     let
       ang = rand TAU
       size = rand(sizeRange)
-    curItem.rotation =      vec2(cos(ang), sin(ang))
-    curItem.scale =         vec2(size)
+      spinSpeed = -5.0.degToRad
+    curItem.rotation[0] = ang
+    curItem.rotation[1] = rand(-spinSpeed .. spinSpeed)
+    curItem.scale =       vec2(size)
 
   texBillboard.updateTexture(ballTexture)
 
@@ -132,7 +127,6 @@ proc mainLoop() =
     lastFrameTime = curFrameTime
     curFrameTime = epochTime()
     dt = curFrameTime - lastFrameTime
-
 
     texBillboard.rotMat[0] = cos(angle)
     texBillboard.rotMat[1] = sin(angle)

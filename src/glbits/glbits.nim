@@ -236,6 +236,7 @@ proc updateGPU*(vbo: var VertexBufferObject) =
     vbo.updateGPU(vbo.dataLen)
 
 proc render*(vbo: VertexBufferObject, instances: int, vertexMode = GL_TRIANGLES) =
+  ## Draw multiple instances of a range of elements.
   vbo.bindBuffer
   debugMsg &"Drawing models using VBO {vbo.id} with {instances} instances and float count {vbo.floatCount}"
   glDrawArraysInstanced(vertexMode, 0.GLint, vbo.floatCount.GLsizei, instances.GLsizei)

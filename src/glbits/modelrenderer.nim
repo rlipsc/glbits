@@ -1,7 +1,5 @@
-#[
-  This module implements a simple, ready to use 3D model renderer.
-  Note: Make sure to set the instance colour up, as the default colour is black.
-]#
+## This module implements a simple, ready to use 3D model renderer.
+## Note: Make sure to set the instance colour, as the default colour is black.
 
 import glbits
 export glbits
@@ -140,7 +138,7 @@ proc renderModelCore(modelId: ModelId, count: Natural) =
   assert count in 0 .. model.vao.buffers[PositionBufferIndex].dataLen
   model.vao.buffers[VertexBufferIndex].updateGPU()
   model.vao.buffers[VertexColBufferIndex].updateGPU()
-  #
+
   model.vao.buffers[PositionBufferIndex].updateGPU(count)
   model.vao.buffers[ScaleBufferIndex].updateGPU(count)
   model.vao.buffers[RotationBufferIndex].updateGPU(count)

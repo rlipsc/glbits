@@ -39,7 +39,7 @@ const
     {
 
       vec3 position;
-      // NB: rotation.x is angle, rotation.y is angle inc
+      // NB: rotation.x is angle, rotation.y is unused.
       mat2 localRot = mat2(cos(rotation.x), -sin(rotation.x), sin(rotation.x), cos(rotation.x));
       position.xy = (localRot * (vertex.xy * scale)) + positionData.xy;
       position.z = positionData.z + vertex.z;
