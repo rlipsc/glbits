@@ -11,3 +11,7 @@ Whilst `glbits` It is intended to be built upon, a ready to use example model re
 Expected output from running `glbits` as the main module:
 
 https://user-images.githubusercontent.com/36367371/124191338-90528a00-dabb-11eb-8b20-2ae3ed9d9ed5.mp4
+
+A demo of instanced texture rendering with 200,000 textures and global rotation is provided in `texturedemo.nim`:
+
+https://user-images.githubusercontent.com/36367371/124296615-128d8d80-db52-11eb-8d50-d4efbd130d8a.mp4
