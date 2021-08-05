@@ -68,6 +68,30 @@ func sqrLen*(v: openarray[GLfloat]): float {.inline.} =
 
 template length*(v: openarray[GLfloat]): float = sqrt(v.sqrLen)
 
+proc rotate2d*[T: GLVectorf2 | GLvectorf3](v: var T, angle: float) =
+  ## Sign donates direction
+  let
+    s = sin(angle)
+    c = cos(angle)
+    newX = c * v.x - s * v.y
+  v.y = c * v.y + s * v.x
+  v.x = newX
+
+proc rotated2d*[T: GLVectorf2 | GLvectorf3](v: T, angle: float): T =
+  ## Return a rotated copy of `v`.
+  result = v
+  result.rotate2d(angle)
+
+proc rotate2d*[T: GLVectorf2 | GLvectorf3](vecs: var openarray[T], angle: float) =
+  for i in 0 ..< vecs.len:
+    vecs[i].rotate2d
+
+proc rotated2d*[T: openarray[GLVectorf2 | GLvectorf3]](vecs: T, angle: float): T =
+  when result is seq:
+    result.setLen vecs.len
+  for i, v in vecs:
+    result[i] = v.rotated2d(angle)
+
 macro makeOps*(ty: typedesc[array]): untyped =
   ## Builds `+`, `-`, `*`, `/`, `+=`, `-=`, `*=`, and `/=` operators,
   ## inversion with `-`, and `clamp` for array types.
