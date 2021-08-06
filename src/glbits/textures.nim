@@ -165,6 +165,10 @@ proc initTexture*[T](tex: var TextureData[T], width, height: int) =
   if not tex.data.isNil: tex.data.dealloc
   tex.data = cast[TextureArrayPtr[T]](alloc0((width * height) * T.sizeOf))
 
+proc clearTexture*[T](tex: var TextureData[T]) =
+  if not tex.data.isNil:
+    zeroMem(tex.data, (tex.width * tex.height) * T.sizeOf)
+
 proc freeTexture*[T](tex: var TextureData[T]) =
   if tex.data != nil: tex.data.deAlloc
   tex.data = nil
