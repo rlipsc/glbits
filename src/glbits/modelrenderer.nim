@@ -229,3 +229,27 @@ proc makePolyModel*[T: Coordinate2d](shaderProgram: ShaderProgramId, verts: open
 
   if maxInstances > 0:
     result.setMaxInstanceCount(maxInstances)
+
+
+proc makeRectangleModel*(shaderProgram: ShaderProgramId, col: GLvectorf4, w, h = 2.0, z = 0.0, maxInstances = 0): ModelId =
+  ## Create a coloured rectangle model.
+  let
+    hw = w * 0.5
+    hh = h * 0.5
+    rectVerts = @[
+      vec3(-hw,  hh, z),
+      vec3(-hw, -hh, z),
+      vec3( hw, -hh, z),
+
+      vec3(-hw,  hh, z),
+      vec3( hw, -hh, z),
+      vec3( hw,  hh, z),
+      ]
+
+  var rectCols = newSeq[GLvectorf4](rectVerts.len)
+  for i in 0 ..< rectVerts.len:
+    rectCols[i] = col
+
+  result = newModel(shaderProgram, rectVerts, rectCols)
+  if maxInstances > 0:
+    result.setMaxInstanceCount(maxInstances)
