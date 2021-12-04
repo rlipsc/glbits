@@ -1,8 +1,8 @@
 # Package
 packageName   = "glbits"
-version       = "0.1.3"
+version       = "0.1.4"
 author        = "Ryan Lipscombe"
-description   = "A light interface to OpenGL shaders, VBOs, and VAOs"
+description   = "A light library for OpenGL graphics applications"
 license       = "Apache License 2.0"
 srcDir        = "src"
 
