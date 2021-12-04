@@ -15,14 +15,11 @@ glClearColor(0.0, 0.0, 0.0, 1.0)                  # Set background color to blac
 glClearDepth(1.0)                                 # Set background depth to farthest
 glEnable(GL_DEPTH_TEST)                           # Enable depth testing for z-culling
 glEnable(GL_BLEND)                                # Enable alpha channel
-glEnable(GL_LIGHTING)                             # Enable lighting
-glEnable(GL_LIGHT0)                               # Enable lighting
 glEnable(GL_TEXTURE_COORD_ARRAY)
 glEnable(GL_TEXTURE_2D)
 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 glDepthFunc(GL_LEQUAL)                            # Set the type of depth-test
 glShadeModel(GL_SMOOTH)                           # Enable smooth shading
-glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST) # Nice perspective corrections
 
 proc reshape(newWidth: cint, newHeight: cint) =
   glViewport(0, 0, newWidth, newHeight)   # Set the viewport to cover the new window
@@ -58,16 +55,19 @@ proc createBallTexture(texture: var GLTexture, w, h = 120) =
         d = sqrt((diff[0] * diff[0]) + (diff[1] * diff[1]))
         normD = d / maxDist
         edgeDist = smootherStep(1.0, 0.0, normD)
+      
       texture.data[ti] = vec4(edgeDist, edgeDist, edgeDist, edgeDist)
 
 proc mainLoop() =
-  let targetFramePeriod: uint32 = 20 # 20 milliseconds corresponds to 50 fps
+  let
+    targetFramePeriod: uint32 = 20 # 20 milliseconds corresponds to 50 fps
   var
     frameTime: uint32 = 0
     curFrameTime = epochTime()
     lastFrameTime = epochTime()
     dt = curFrameTime - lastFrameTime
     ballTexture: GLTexture
+  
   ballTexture.createBallTexture()
 
   reshape(screenWidth, screenHeight) # Set up initial viewport and projection
@@ -97,7 +97,8 @@ proc mainLoop() =
     let
       ang = rand TAU
       size = rand(sizeRange)
-      spinSpeed = -5.0.degToRad
+      spinSpeed = 5.0.degToRad
+    
     curItem.rotation[0] = ang
     curItem.rotation[1] = rand(-spinSpeed .. spinSpeed)
     curItem.scale =       vec2(size)
