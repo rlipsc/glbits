@@ -64,7 +64,9 @@ func brighten*[T: GLvectorf3|GLvectorf4](colour: T, value: float): T =
     result[3] = colour[3]
 
 func sqrLen*(v: openarray[GLfloat]): float {.inline.} =
-  for i in 0 ..< v.len: result += v[i] * v[i]
+  for i in 0 ..< v.len:
+    {.unroll.}
+    result += v[i] * v[i]
 
 template length*(v: openarray[GLfloat]): float = sqrt(v.sqrLen)
 
@@ -161,24 +163,54 @@ macro makeOps*(ty: typedesc[array]): untyped =
       func `opEq`*(`a`: var `ty`, `b`: `ty`) {.inline,noInit.} = `opEqTy`
       func `opEq`*(`a`: var `ty`, `b`: `sym`) {.inline,noInit.}  = `opEqVal`
     )
-  # Inversion and clamp operator.
+
+  proc genInfixes(clauses: seq[NimNode], connector: string): NimNode =
+    var parent = newEmptyNode()
+    for c in clauses:
+      if parent.kind == nnkEmpty: parent = c
+      else: parent = infix(parent, connector, c)
+    parent
+    
+  # Inversion, clamp, and '<=' operator.
+  # Defining '<=' allows '>=' and permits use of 'min' and 'max'.
   var
     opInv = nnkBracket.newTree()
     opClamp = nnkBracket.newTree()
+    opLEConds: seq[NimNode]
+  
   let
-    invOp = ident "-"
+    invOp = nnkAccQuoted.newTree(ident "-")
     v = ident "v"
+  
   for i in 0 .. len:
     opInv.add(  quote do: -`a`[`i`])
     opClamp.add(quote do: clamp(`v`[`i`], `a`, `b`) )
+    opLEConds.add(quote do: `a`[`i`] <= `b`[`i`])
+  
+  let
+    lessEq = nnkAccQuoted.newTree(ident "<=")
+    opLE = opLEConds.genInfixes "and"
+  
   result.add(quote do:
     func `invOp`*(`a`: `ty`): `ty` = `opInv`
     func clamp*(`v`: `ty`, `a`, `b`: `sym`): `ty` {.inline,noInit.} = `opClamp`
+    func `lessEq`*(`a`, `b`: `ty`): bool {.inline,noInit.}  = `opLE`
   )
-  
+
 makeOps GLvectorf2
 makeOps GLvectorf3
 makeOps GLvectorf4
+
+func dot*(v1, v2: GLvector): float =
+  ## Calculate the dot product of two vectors.
+  assert v1.len == v2.len, "Vectors must be the same length"
+  for i, v in v1:
+    {.unroll.}
+    result = result + v * v2[i]
+
+func reflect*(incident, normal: GLvectorf2): GLvectorf2 =
+  let d = 2.0 * dot(normal, incident)
+  result = vec2(incident[0] - d * normal[0], incident[1] - d * normal[1])
 
 #-------------------------------------------------------------------------------------
 # Mix and step support: Linear & Hermite interpolation over GLfloat values and arrays.
@@ -229,6 +261,7 @@ func smootherStep*[T: Somefloat](x, y, a: T): T {.inline.} =
 #--------
 
 func normal*[T: GLVector](a: T): T {.inline, noInit.} =
+  ## Calculate the normal of a vector.
   let mag = a.length
   if mag > 0:
     for i in 0 .. a.high:
@@ -280,7 +313,7 @@ proc triangleNormals*(vertices: openarray[GLvectorf3]): seq[GLvectorf3] =
 # Misc utils
 #-----------
 
-proc constrain*(v: var openarray[GLVector], maxLength: float) =
+func constrain*(v: var GLVector, maxLength: float) =
   ## Vector cannot go over maxLength but retains angle.
   let
     sLen = v.sqrLen
@@ -293,11 +326,11 @@ proc constrain*(v: var openarray[GLVector], maxLength: float) =
     v.x = maxLength * nx
     v.y = maxLength * ny
 
-proc constrain*[T: openarray[GLVector]](v: T, maxLength: float): T {.noInit.} =
+proc constrain*[T: GLVector](v: T, maxLength: float): T {.noInit.} =
   result = v
   result.constrain(maxLength)
 
-proc setLength*[T](v: var GLVector, length: float) =
+func setLength*(v: var GLVector, length: float | GLfloat) =
   ## Vector is set to `length` but retains angle.
   let vLen =  v.length
   if vLen == 0.0: return
@@ -307,10 +340,15 @@ proc setLength*[T](v: var GLVector, length: float) =
   v.x = length * c
   v.y = length * s
 
+proc asLength*[T: GLVector](v: T, length: float | GLfloat): T {.noInit} =
+  result = v
+  result.setLength length
+
 func rotate90L*(original: GLVectorf2): GLVectorf2 = vec2(original[1], -original[0])
 func rotate90R*(original: GLVectorf2): GLVectorf2 = vec2(-original[1], original[0])
 
-template vector*(angle: float, length: float): GLvectorf2 = [(length * cos(angle)).GLfloat, length * sin(angle)]
+template vector*(angle: float, length: float): GLvectorf2 =
+  [(length * cos(angle)).GLfloat, length * sin(angle)]
 
 proc toAngle*(vec: GLVectorf2): float = arcTan2 vec.y, vec.x
 
@@ -325,6 +363,20 @@ func angleDiff*(a, b: float): float =
   result = (a - b) + PI
   result = result / TAU
   result = ((result - floor(result)) * TAU) - PI
+
+func taxiCabAngle*(x, y: float): float {.inline.} =
+  ## Returns the angle based on rectilinear distance.
+  ## The result ranges from 0.0 .. 4.0.
+  if y >= 0:
+    if x >= 0:
+      y / (x + y)
+    else:
+      1 - x / (-x + y)
+  else:
+    if x < 0:
+      2 - y / (-x - y)
+    else:
+      3 + x / (x - y)
 
 #-------------------------------
 # Line traversal / interpolation
@@ -422,4 +474,7 @@ when isMainModule:
       a = a.clamp(25, 35)
       check a == [25, 30, 35]
       check -a == [-25, -30, -35]
+      check max([1, 4, 3], [3, 4, 5]) == [3, 4, 5]
+      check min([1, 4, 3], [3, 4, 5]) == [1, 4, 3]
+
 
