@@ -1,16 +1,19 @@
 ## This module implements a simple, ready to use 3D model renderer.
 ## Note: Make sure to set the instance colour, as the default colour is black.
 
-import glbits
+import glbits, glbits/uniforms
 export glbits
 
 type
   ModelId* = distinct int
+
   ModelInstanceDetails* = tuple[position: GLvectorf3, scale: GLvectorf3, angle: GLfloat, col: GLvectorf4]
 
   ModelStorage = object
     programId: ShaderProgramId
     vao: VertexArrayObject
+    aspect: float
+    aspectUniform: Uniform
 
 const
   VertexBufferIndex* = 0
@@ -34,18 +37,24 @@ const
     layout(location = 4) in float angle;
     layout(location = 5) in vec4 colour;
 
+    uniform float aspectRatio;
+
     out vec4 col;
 
     void main()
     {
       float c = cos(angle);
       float s = sin(angle);
-      mat2 m = mat2(c, s, -s, c);
-      vec3 scaledModel = vec3(m * model.xy, model.z) * scale + position;
-      gl_Position = vec4(scaledModel, 1.0f);
+
+      mat2 rotation = mat2(c, s, -s, c);
+      vec3 rotated = vec3(rotation * model.xy, model.z);
+      vec3 vertex = rotated * scale + position;
+
+      gl_Position = vec4(vertex.x * aspectRatio, vertex.y, vertex.z, 1.0f);
       col = vertexCol * colour;
     }
     """
+  
   fragmentGLSL =
     """
     #version 330
@@ -79,9 +88,12 @@ template modelByIndex*(index: int): ModelId = index.ModelId
 
 template vao*(modelId: ModelId): VertexArrayObject = models[modelId.int].vao
 
+iterator allModels*: ModelId =
+  for i in 0 ..< models.len: yield i.ModelId
+
 proc newModelRenderer*: ShaderProgramId = newShaderProgramId(vertexGLSL, fragmentGLSL)
 
-proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3], colours: openarray[GLvectorf4]): ModelId =
+proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3], colours: openarray[GLvectorf4], aspectRatio = 1.0): ModelId =
   ## Create a new model attached to a shader program.
   var
     vao = initVAO()
@@ -104,7 +116,15 @@ proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3]
   vao.add rotations
   vao.add colours
 
-  models.add ModelStorage(programId: shaderProgramId, vao: vao)
+  let aspUni = shaderProgramId.getUniformLocation("aspectRatio", false)
+  aspUni.setFloat aspectRatio
+
+  models.add ModelStorage(
+    programId: shaderProgramId,
+    vao: vao,
+    aspect: aspectRatio,
+    aspectUniform: aspUni
+  )
   result = models.high.ModelId
 
 proc setMaxInstanceCount*(modelId: ModelId, count: int) =
@@ -126,6 +146,15 @@ proc updateInstance*(modelId: ModelId, index: int, item: ModelInstanceDetails) =
 
 proc programId*(modelId: ModelId): ShaderProgramId =
   models[modelId.int].programId
+
+proc aspect*(modelId: ModelId): float = models[modelId.int].aspect
+
+proc `aspect=`*(modelId: ModelId, value: float) =
+  assert value != 0.0
+  let v = 1.0 / value
+  models[modelId.int].aspect = v
+  modelId.programId.activate
+  models[modelId.int].aspectUniform.setFloat v
 
 template bindModel(modelId: ModelId) =
   template model: untyped = models[modelId.int]
@@ -253,3 +282,4 @@ proc makeRectangleModel*(shaderProgram: ShaderProgramId, col: GLvectorf4, w, h =
   result = newModel(shaderProgram, rectVerts, rectCols)
   if maxInstances > 0:
     result.setMaxInstanceCount(maxInstances)
+

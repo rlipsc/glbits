@@ -706,7 +706,7 @@ when isMainModule:
 
   # Initialize OpenGL
   loadExtensions()
-  glClearColor(0.0, 0.0, 0.0, 1.0)                  # Set background color to black and opaque
+  glClearColor(0.0, 0.0, 0.0, 1.0)                  # Set background colour to black and opaque
   glClearDepth(1.0)                                 # Set background depth to farthest
 
   var

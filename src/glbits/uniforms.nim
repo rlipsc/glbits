@@ -1,4 +1,4 @@
-import opengl, glbits, modelrenderer, strformat, debugutils
+import opengl, glbits, strformat, debugutils
 
 proc getUniformLocation*(program: GLuint, name: string, allowMissing = false): Uniform = 
   let uni = glGetUniformLocation(program, name)

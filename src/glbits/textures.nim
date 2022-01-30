@@ -15,6 +15,7 @@ const
 
     uniform vec2 globalOffset;
     uniform vec2 globalRotation;
+    uniform float globalAspect;
 
     in vec2 texcoord;
     out vec4 FragCol;
@@ -40,7 +41,8 @@ const
 
       vec3 position;
       // NB: rotation.x is angle, rotation.y is unused.
-      mat2 localRot = mat2(cos(rotation.x), -sin(rotation.x), sin(rotation.x), cos(rotation.x));
+      float angle = rotation.x;
+      mat2 localRot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
       position.xy = (localRot * (vertex.xy * scale)) + positionData.xy;
       position.z = positionData.z + vertex.z;
 
@@ -48,7 +50,7 @@ const
       mat2 globalRot = mat2(globalRotation.x,-globalRotation.y, globalRotation.y, globalRotation.x);
       p = globalRot * p;
       
-      gl_Position = vec4(p, position.z, 1.0f);
+      gl_Position = vec4(p.x * globalAspect, p.y, position.z, 1.0f);
 
       FragCol = colour;
       Texcoord = texcoord;
@@ -93,10 +95,11 @@ type
 
   TextureProc* = proc(texture: var GLTexture)
 
+  ## Translation data for instances (e.g., from 'addItems').
   TexBillboardData* = tuple[
     positionData: GLvectorf4,
     colour: GLvectorf4,
-    rotation: GLvectorf2,
+    rotation: GLvectorf2, # rotation.x is angle, rotation.y is unused.
     scale: GLvectorf2
   ]
 
@@ -125,6 +128,7 @@ type
     varrayId: GLuint
     offsetId*: Uniform
     rotMatId*: Uniform
+    aspectId*: Uniform
     texId: Uniform
     texture*: GLTexture
     texAttribId: Attribute
@@ -136,6 +140,7 @@ type
     lastItemOffset: int
     rotMat*: GLvectorf2
     offset*: GLvectorf2
+    aspect*: GLfloat
     scale*: float
     hidden*: bool # turns off rendering when set
 
@@ -155,9 +160,20 @@ const rectangle: array[6, TextureVertex] = [
 
 proc programId*(tb: TexBillboard): GLuint = tb.rendering.program.id
 
+
+template withProgram*(tb: TexBillboard, actions: untyped) =
+  tb.rendering.program.withProgram:
+    actions
+
+
 template index*[T](tex: var TextureData[T], x, y: int): untyped = ((y * tex.width) + x)
+
+
 proc dataSize*(tb: TexBillboard): int = tb.count * TexBillboardDataSize
+
+
 proc len*[T](tex: TextureData[T]): int = tex.width * tex.height
+
 
 proc initTexture*[T](tex: var TextureData[T], width, height: int) =
   tex.width = width
@@ -165,13 +181,16 @@ proc initTexture*[T](tex: var TextureData[T], width, height: int) =
   if not tex.data.isNil: tex.data.dealloc
   tex.data = cast[TextureArrayPtr[T]](alloc0((width * height) * T.sizeOf))
 
+
 proc clearTexture*[T](tex: var TextureData[T]) =
   if not tex.data.isNil:
     zeroMem(tex.data, (tex.width * tex.height) * T.sizeOf)
 
+
 proc freeTexture*[T](tex: var TextureData[T]) =
   if tex.data != nil: tex.data.deAlloc
   tex.data = nil
+
 
 proc uploadModel*(tb: var TexBillboard) =
   # not wise to call this whilst using a buffer,
@@ -181,8 +200,9 @@ proc uploadModel*(tb: var TexBillboard) =
   glBindBuffer(GL_ARRAY_BUFFER, tb.bos.modelBO)
   glBufferData(GL_ARRAY_BUFFER, GLsizei(tb.model.len * TextureVertex.sizeOf), tb.modelBuf, GL_STATIC_DRAW) # copy data
 
+
 proc newTexBillboard*(vertexGLSL = defaultTextureVertexGLSL, fragmentGLSL = defaultTextureFragmentGLSL,
-    max = 1, model: openarray[TextureVertex] = rectangle, modelScale = 1.0, manualTextureBo = false, manualProgram = false): TexBillboard =
+    max = 1, model: openarray[TextureVertex] = rectangle, modelScale = 1.0, manualTextureBo = false, manualProgram = false, renderAspect = 1.0): TexBillboard =
   ## A container for instanced texture billboards. Use `addItems` or `addFullscreenItem` to add an instance.
   ## By default a program is generated along with a texture that's shared between all instances, defined with `updateTexture`.
   ## You can override this behaviour using the following parameters:
@@ -195,6 +215,7 @@ proc newTexBillboard*(vertexGLSL = defaultTextureVertexGLSL, fragmentGLSL = defa
   result.count = max
   result.rotMat[0] = c0
   result.rotMat[1] = s0
+  result.aspect = renderAspect
   result.curItemOffset = 0
 
   let modelBytes = GLsizei(model.len * TextureVertex.sizeOf)
@@ -214,7 +235,10 @@ proc newTexBillboard*(vertexGLSL = defaultTextureVertexGLSL, fragmentGLSL = defa
     program.activate
     result.offsetId =       program.id.getUniformLocation("globalOffset")
     result.rotMatId =       program.id.getUniformLocation("globalRotation")
+    result.aspectId =       program.id.getUniformLocation("globalAspect")
     result.texId =          program.id.getUniformLocation("tex")
+
+    result.aspectId.setFloat renderAspect
 
   result.model = @[]
   for idx, item in model:
@@ -279,8 +303,10 @@ proc newTexBillboard*(vertexGLSL = defaultTextureVertexGLSL, fragmentGLSL = defa
     glVertexAttribPointer(result.texAttribId.GLuint, 2, cGL_FLOAT, GL_FALSE.GLBoolean, modelDataSize, cast[pointer](GLFloat.sizeOf * 3))
     result.uploadModel
 
+
 proc getUniformLocation*(tb: TexBillboard, name: string, allowMissing = false): Uniform =
   tb.rendering.program.id.getUniformLocation(name, allowMissing)
+
 
 proc manualInit*(tb: var TexBillboard, program: GLuint) =
   ## If you have your own program, use this to sync the uniforms required.
@@ -290,6 +316,7 @@ proc manualInit*(tb: var TexBillboard, program: GLuint) =
 
   tb.offsetId = getUniformLocation(program, "globalOffset", true)
   tb.rotMatId = getUniformLocation(program, "globalRotation", true)
+  tb.aspectId = getUniformLocation(program, "globalAspect", true)
   tb.texId = getUniformLocation(program, "tex", true)
 
   glBindVertexArray(tb.varrayId)
@@ -300,7 +327,34 @@ proc manualInit*(tb: var TexBillboard, program: GLuint) =
   glVertexAttribPointer(5, 2, cGL_FLOAT, GL_FALSE.GLBoolean, modelDataSize, cast[pointer](GLFloat.sizeOf * 3)) # shared with vertex coords
   tb.uploadModel
 
+
 proc resetItemPos*(tb: var TexBillboard) = tb.curItemOffset = 0
+
+
+proc `[]`*(tb: var TexBillboard, index: int): var TexBillboardData =
+  assert index in 0..<tb.count, "Index out of bounds. Given " & $index & ", max: " & $tb.count
+  tb.dataBuf[index]
+
+
+proc uploadItems*(tb: var TexBillboard, indexes: Slice[int]) =
+  ## Upload an inclusive range of local instance changes to the GPU.
+  glBindBuffer( GL_ARRAY_BUFFER, tb.bos.dataBO )
+  glBufferSubData(GL_ARRAY_BUFFER,
+    (indexes.a * TexBillboardDataSize).GLintptr,
+    (indexes.b - indexes.a + 1) * TexBillboardDataSize.GLsizeiptr,
+    tb.dataBuf
+  )
+
+
+proc uploadItems*(tb: var TexBillboard) =
+  tb.uploadItems(0 ..< tb.count)
+
+
+iterator items*(tb: var TexBillboard): var TexBillboardData =
+  ## Iterates the current data buffer. Yielded values are mutable.
+  for i in 0 ..< tb.count:
+    yield tb.dataBuf[i]
+
 
 template addItems*(tb: var TexBillboard, amount: int, actions: untyped): untyped =
   ## Adds billboard instances.
@@ -327,9 +381,15 @@ template addItems*(tb: var TexBillboard, amount: int, actions: untyped): untyped
       i += 1
 
     if tb.curItemOffset - startItems > 0:
-      # upload changes
+      # Upload changes to the GPU.
+      # TODO: improve cycling behaviour and item management.
       glBindBuffer( GL_ARRAY_BUFFER, tb.bos.dataBO )
-      glBufferSubData(GL_ARRAY_BUFFER, (startItems * TexBillboardDataSize).GLintptr, (tb.curItemOffset - startItems) * TexBillboardDataSize.GLsizeiptr, tb.dataBuf)
+      glBufferSubData(GL_ARRAY_BUFFER,
+        (startItems * TexBillboardDataSize).GLintptr,
+        (tb.curItemOffset - startItems) * TexBillboardDataSize.GLsizeiptr,
+        tb.dataBuf
+      )
+
 
 proc addFullScreenItem*(tb: var TexBillboard, zPos: float = 0.0) =
   ## Convenience proc for full screen billboards.
@@ -339,6 +399,7 @@ proc addFullScreenItem*(tb: var TexBillboard, zPos: float = 0.0) =
     curItem.rotation = vec2(0.0, 0.0)
     curItem.scale = vec2(1.0, 1.0)
 
+
 proc updateTexture*(tb: var TexBillboard, sdlTexture = false) =
   glBindTexture(GL_TEXTURE_2D, tb.bos.textureBO)
   assert(tb.texture.data != nil)
@@ -347,25 +408,36 @@ proc updateTexture*(tb: var TexBillboard, sdlTexture = false) =
   else:
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F.GLInt, tb.texture.width.GLsizei, tb.texture.height.GLsizei, 0, GL_RGBA, cGL_FLOAT, tb.texture.data)
 
-proc updateTexture*(tb: var TexBillboard, newData: pointer, w, h: int, sdlTexture = false, freeOld = false) =
+
+proc updateTexture*(tb: var TexBillboard, newData: pointer, w, h: int, sdlTexture = false, freeOld = true) =
   if freeOld:
     if tb.texture.data != newData and tb.texture.data != nil: tb.texture.data.dealloc
   tb.texture.data = cast[SimpleTextureArrayPtr](newData)
   tb.texture.width = w
   tb.texture.height = h
-  tb.updateTexture
+  tb.updateTexture sdlTexture
 
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
 
+
 proc updateTexture*(tb: var TexBillboard, newTexture: GLTexture, sdlTexture = false) =
   tb.updateTexture(newTexture.data, newTexture.width, newTexture.height, sdlTexture)
+
+
+proc updateAspect*(tb: var TexBillboard, ratio: GLfloat) =
+  let v = 1.0 / ratio
+  tb.withProgram:
+    tb.aspect = v
+    tb.aspectId.setFloat v
+
 
 template renderCore(tb: TexBillboard, program: GLuint) =
   tb.offsetId.setVec2 tb.offset
   tb.rotMatId.setVec2 tb.rotMat
+  tb.aspectId.setFloat tb.aspect
 
   # bind results and draw
   glBindVertexArray(tb.varrayId)
@@ -381,16 +453,13 @@ template renderCore(tb: TexBillboard, program: GLuint) =
 
   glDisableClientState( GL_VERTEX_ARRAY )
 
-template withProgram*(tb: TexBillboard, actions: untyped) =
-  tb.rendering.program.withProgram:
-    actions
 
 proc render*(tb: TexBillboard) =
-  # render
-  # upload offsets
+  ## Render the texture billboard.
   if not tb.hidden:
     tb.withProgram:
       tb.renderCore(tb.rendering.program.id)
+
 
 template renderSetup*(tb: TexBillboard, actions: untyped) =
   if not tb.hidden:
@@ -398,8 +467,69 @@ template renderSetup*(tb: TexBillboard, actions: untyped) =
       actions
       renderCore(tb, tb.rendering.program.id)
 
+
 template renderWithProgram*(tb: TexBillboard, program: GLuint, actions: untyped): untyped =
   if not tb.hidden:
     glUseProgram(program)    
     actions
     renderCore(tb, program)
+
+
+template forPixels*[T](tex: var TextureData[T], actions: untyped): untyped =
+  var
+    px {.inject.}: int
+    py {.inject.}: int
+    pi {.inject.}: int
+  
+  for yi in 0..< tex.height:
+    py = yi
+    for xi in 0..< tex.width:
+      px = xi
+      pi = tex.index(xi, yi)
+      actions
+
+
+template forHalfPixels*[T](tex: var TextureData[T], actions: untyped): untyped =
+  var
+    px {.inject.}: int
+    py {.inject.}: int
+    pi {.inject.}: int
+  
+  for yi in 0..< tex.height div 2:
+    py = yi
+    for xi in 0..< tex.width:
+      px = xi
+      pi = tex.index(xi, yi)
+      actions
+
+
+proc reverseY*[T](tex: var TextureData[T]) =
+  tex.forHalfPixels:
+    let
+      newY = tex.height - 1 - py
+      newIdx = tex.index(px, newY)
+      curValue = tex.data[pi]
+    tex.data[pi] = tex.data[newIdx]
+    tex.data[newIdx] = curValue
+
+
+proc reverseX*[T](tex: var TextureData[T]) =
+  tex.forHalfPixels:
+    let
+      newX = tex.width - 1 - px
+      newIdx = tex.index(newX, py)
+      curValue = tex.data[pi]
+    tex.data[pi] = tex.data[newIdx]
+    tex.data[newIdx] = curValue
+
+
+proc reverseXY*[T](tex: var TextureData[T]) =
+  tex.forHalfPixels:
+    let
+      newX = tex.width - 1 - px
+      newY = tex.height - 1 - py
+      newIdx = tex.index(newX, newY)
+      curValue = tex.data[pi]
+    tex.data[pi] = tex.data[newIdx]
+    tex.data[newIdx] = curValue
+

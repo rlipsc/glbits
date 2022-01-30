@@ -1,37 +1,6 @@
-import sdl2, times, random, glbits, utils, textures, math
+import sdl2, times, random, glbits, utils, textures, math, glrig
 
-discard sdl2.init(INIT_EVERYTHING)
-
-var screenWidth: cint = 1200
-var screenHeight: cint = 1000
-
-var window = createWindow("SDL/OpenGL Skeleton", 100, 100, screenWidth, screenHeight, SDL_WINDOW_OPENGL or SDL_WINDOW_RESIZABLE)
-var context = window.glCreateContext()
-#var renderer =createRenderer(window, -1, Renderer_Accelerated or Renderer_PresentVsync or Renderer_TargetTexture)
-
-# Initialize OpenGL
-loadExtensions()
-glClearColor(0.0, 0.0, 0.0, 1.0)                  # Set background color to black and opaque
-glClearDepth(1.0)                                 # Set background depth to farthest
-glEnable(GL_DEPTH_TEST)                           # Enable depth testing for z-culling
-glEnable(GL_BLEND)                                # Enable alpha channel
-glEnable(GL_TEXTURE_COORD_ARRAY)
-glEnable(GL_TEXTURE_2D)
-glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-glDepthFunc(GL_LEQUAL)                            # Set the type of depth-test
-glShadeModel(GL_SMOOTH)                           # Enable smooth shading
-
-proc reshape(newWidth: cint, newHeight: cint) =
-  glViewport(0, 0, newWidth, newHeight)   # Set the viewport to cover the new window
-  glMatrixMode(GL_PROJECTION)             # To operate on the projection matrix
-  glLoadIdentity()                        # Reset
-  #gluPerspective(45.0, newWidth / newHeight, 0.1, 100.0)  # Enable perspective projection with fovy, aspect, zNear and zFar
-
-proc limitFrameRate(frameTime: var uint32, target: uint32) =
-  let now = getTicks()
-  if frameTime > now:
-    delay(frameTime - now) # Delay to maintain steady frame rate
-  frameTime += target
+initSdlOpenGl(1200, 1400)
 
 proc createBallTexture(texture: var GLTexture, w, h = 120) =
   ## Create a ball texture.
@@ -58,42 +27,39 @@ proc createBallTexture(texture: var GLTexture, w, h = 120) =
       
       texture.data[ti] = vec4(edgeDist, edgeDist, edgeDist, edgeDist)
 
+
 proc mainLoop() =
+  const
+    max = 1_000_000 # Instances.
+    dt = 1.0 / 60.0
   let
-    targetFramePeriod: uint32 = 20 # 20 milliseconds corresponds to 50 fps
+    targetFramePeriod: uint32 = 20
   var
-    frameTime: uint32 = 0
-    curFrameTime = epochTime()
-    lastFrameTime = epochTime()
-    dt = curFrameTime - lastFrameTime
     ballTexture: GLTexture
-  
+
+  # Draw on the texture.
   ballTexture.createBallTexture()
 
-  reshape(screenWidth, screenHeight) # Set up initial viewport and projection
-
-  const max = 200_000
   var
-    evt = sdl2.defaultEvent
-    runGame = true
-    texBillboard = newTexBillboard(defaultTextureVertexGLSL, defaultTextureFragmentGLSL, max = max)
+    texBillboard = newTexBillboard(
+      defaultTextureVertexGLSL,
+      defaultTextureFragmentGLSL,
+      max = max,
+      renderAspect = sdlDisplay.aspect)
 
-  # Big one in the middle.
-  texBillboard.addItems(1):
-    curItem.positionData =  vec4(0.0, 0.0, 0.0, 1.0)
-    curItem.colour =        vec4(1.0, 0.0, 0.0, 1.0)
-    curItem.rotation =      vec2(cos(0.0), sin(0.0))
-    curItem.scale =         vec2(1.0, 1.0)
+  # Send the texture to the GPU.
+  texBillboard.updateTexture(ballTexture)
 
-  # Scatterings of instances across the screen.
   const
     screenRange = -2.0 .. 2.0
-    sizeRange = 0.005 .. 0.0125
+    sizeRange = 0.002 .. 0.006
+    moveRange = -0.005 .. 0.005
 
-  texBillboard.addItems(max - 1):
+  # Add some instances of the texture to the billboard.
+  texBillboard.addItems(max):
     curItem.positionData =  vec4(rand(screenRange), rand(screenRange), 0.0, 1.0)
-    #curItem.colour =        vec4(1.0, rand(0.5), rand(0.2), 1.0)
     curItem.colour =        vec4(rand(1.0), rand(1.0), rand(1.0), 1.0)
+
     let
       ang = rand TAU
       size = rand(sizeRange)
@@ -103,43 +69,45 @@ proc mainLoop() =
     curItem.rotation[1] = rand(-spinSpeed .. spinSpeed)
     curItem.scale =       vec2(size)
 
-  texBillboard.updateTexture(ballTexture)
-
-  let maxVel = 40.0.degToRad
+  let
+    maxVel = 40.0.degToRad
   var
     angle: float
     turnVel = 0.0.degToRad
     turnAccl = 0.0
-  while runGame:
-    while pollEvent(evt):
-      if evt.kind == QuitEvent:
-        runGame = false
-        break
-      if evt.kind == WindowEvent:
-        var windowEvent = cast[WindowEventPtr](addr(evt))
-        if windowEvent.event == WindowEvent_Resized:
-          let newWidth = windowEvent.data1
-          let newHeight = windowEvent.data2
-          reshape(newWidth, newHeight)
+  
+  # SDL2 polling loop.
+  pollEvents:
+    if sdlDisplay.changed:
+      texBillboard.updateAspect sdlDisplay.aspect
 
-    # Clear color and depth buffers
-    glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
+    # Render.
+    doubleBuffer:
+      # Set billboard render angle.
+      texBillboard.rotMat[0] = cos(angle)
+      texBillboard.rotMat[1] = sin(angle)
+      # Render texture instances.
+      texBillboard.render
 
-    lastFrameTime = curFrameTime
-    curFrameTime = epochTime()
-    dt = curFrameTime - lastFrameTime
+    # Update some of the instance positions in the buffer.
+    let
+      updateCount = 10_000
+      start = rand(0 ..< texBillboard.count - updateCount)
+      updateSlice = start .. start + updateCount
 
-    texBillboard.rotMat[0] = cos(angle)
-    texBillboard.rotMat[1] = sin(angle)
-    texBillboard.render
+    for i in updateSlice:
+      texBillboard[i].positionData[0] += rand(moveRange)
+      texBillboard[i].positionData[1] += rand(moveRange)
+    
+    # Send the updated buffer to the GPU.
+    texBillboard.uploadItems
 
-    if rand(1.0) < 0.01: turnAccl = rand -maxVel..maxVel
+    # Randomly change the billboard's rotational acceleration.
+    if rand(1.0) < 0.01:
+      turnAccl = rand -maxVel..maxVel
 
     turnVel *= 0.99
     turnVel += turnAccl * dt
     angle += turnVel * dt
-    
-    limitFrameRate(frameTime, targetFramePeriod)
-    window.glSwapWindow() # Swap the front and back frame buffers (double buffering)
 
 mainLoop()

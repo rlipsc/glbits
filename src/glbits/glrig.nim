@@ -53,17 +53,39 @@ type
   
   SDLMousePos* = object
     sx*, sy*: cint
-    gl*: tuple[x, y: GLfloat]
+    gl*: GLvectorf2
     changed*: bool
 
   KeyCodes = ptr array[0 .. SDL_NUM_SCANCODES.int, uint8]
+
+
+proc normalise*(sdlDisplay: SDLDisplay, pos: array[2, int | cint]): GLvectorf2 =
+  ## Convert a screen pixel coordinate to an OpenGl normalised -1.0 .. 1.0.
+
+  let
+    n = [
+      pos[0].float32 / sdlDisplay.res.x.float32,
+      pos[1].float32 / sdlDisplay.res.y.float32
+    ]
+
+  result[0] = (n[0] * 2.0 - 1.0)
+  result[1] = (1.0 - n[1]) * 2.0 - 1.0
+
+
+template normalize*(sdlDisplay: SDLDisplay, pos: array[2, int | cint]): GLvectorf2 =
+  ## Convert a screen pixel coordinate to an OpenGl normalised -1.0 .. 1.0.
+  normalise(sdlDisplay, pos)
+
 
 func update*(sdlDisplay: var SDLDisplay) =
   sdlDisplay.fullScreen = sdlDisplay.w == sdlDisplay.res.x and sdlDisplay.h == sdlDisplay.res.y
   assert sdlDisplay.h != 0, "Zero height for display: " & $sdlDisplay
   sdlDisplay.aspect = sdlDisplay.w / sdlDisplay.h
 
-func pressed*(keyStates: KeyCodes, sc: Scancode): bool = keyStates[sc.int] > 0'u8
+
+func pressed*(keyStates: KeyCodes, sc: Scancode): bool =
+  keyStates[sc.int] > 0'u8
+
 
 template initSdlOpenGl*(width = 640.cint, height = 480.cint, xOffset = 50.cint, yOffset = 60.cint, setFullScreen = false) =
   ## Create window and OpenGL context.
@@ -163,10 +185,10 @@ template pollEvents*(events, actions: untyped) =
   ## 
   block:
     var
-      running {.inject.} = true
-      event {.inject.} = sdl2.defaultEvent
-      mouseInfo {.inject.}: SDLMousePos
-      keyStates {.inject.}: KeyCodes = getKeyboardState()
+      running {.inject, used.} = true
+      event {.inject, used.} = sdl2.defaultEvent
+      mouseInfo {.inject, used.}: SDLMousePos
+      keyStates {.inject, used.}: KeyCodes = getKeyboardState()
 
     while running:
       mouseInfo.changed = false
@@ -201,8 +223,8 @@ template pollEvents*(events, actions: untyped) =
             let
               nX = mm.x.float / sdlDisplay.w.float
               nY = 1.0 - (mm.y.float / sdlDisplay.h.float)
-            mouseInfo.gl.x = (nX * 2.0) - 1.0
-            mouseInfo.gl.y = (nY * 2.0) - 1.0
+            mouseInfo.gl[0] = (nX * 2.0) - 1.0
+            mouseInfo.gl[1] = (nY * 2.0) - 1.0
           
           else:
             # User events.
