@@ -1,5 +1,24 @@
 # GLBits
 
+## v0.1.5 2022-2-3
+
+Added:
+  - SDL2 font support with `TextCache`. This uses a `TexBillboard` to
+    render text to a texture which can then be rendered.
+  - `dot` product function.
+  - `reflect` function.
+  - `asLength` to return a value from the in-place `setLength`.
+  - Add `taxiCabAngle` function.
+  - Generated array operators now include `abs` and `<=`. The latter
+    enables `>=` and `min`/`max` for arrays.
+
+Changed:
+
+- When passed texture data `updateTexture` now defaults to freeing the
+  existing texture before assigning the new one.
+- `normalise` functionality now works with the `SDLDisplay` type.
+- `constrain`: uses `GLvector` instead of `openarray`.
+- Unroll `sqrLen`.
 
 ## v0.1.4 2021-12-4
 
