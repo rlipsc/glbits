@@ -175,25 +175,30 @@ macro makeOps*(ty: typedesc[array]): untyped =
   # Defining '<=' allows '>=' and permits use of 'min' and 'max'.
   var
     opInv = nnkBracket.newTree()
+    opAbs = nnkBracket.newTree()
     opClamp = nnkBracket.newTree()
     opLEConds: seq[NimNode]
   
   let
-    invOp = nnkAccQuoted.newTree(ident "-")
     v = ident "v"
   
   for i in 0 .. len:
-    opInv.add(  quote do: -`a`[`i`])
-    opClamp.add(quote do: clamp(`v`[`i`], `a`, `b`) )
+    opInv.add(    quote do: -`a`[`i`])
+    opAbs.add(    quote do: abs(`a`[`i`]))
+    opClamp.add(  quote do: clamp(`v`[`i`], `a`, `b`) )
     opLEConds.add(quote do: `a`[`i`] <= `b`[`i`])
   
   let
+    invOp = nnkAccQuoted.newTree(ident "-")
+    absOp = ident "abs"
     lessEq = nnkAccQuoted.newTree(ident "<=")
     opLE = opLEConds.genInfixes "and"
+    clampOp = ident "clamp"
   
   result.add(quote do:
     func `invOp`*(`a`: `ty`): `ty` = `opInv`
-    func clamp*(`v`: `ty`, `a`, `b`: `sym`): `ty` {.inline,noInit.} = `opClamp`
+    func `absOp`*(`a`: `ty`): `ty` = `opAbs`
+    func `clampOp`*(`v`: `ty`, `a`, `b`: `sym`): `ty` {.inline,noInit.} = `opClamp`
     func `lessEq`*(`a`, `b`: `ty`): bool {.inline,noInit.}  = `opLE`
   )
 
@@ -237,9 +242,9 @@ func mix*(items: openarray[GLVectorf4], a: float): GLVectorf4 =
   ## Mix over a set of colours with a normalised `a`.
   a.assertNormalised()
   let
-    i2 = round(a * items.high.float).int
-    i1 = max(0, i2 - 1)
-    fracPerItem = 1.0 / items.len.float
+    i1 = int(a * items.high.float)
+    i2 = min(items.high, i1 + 1)
+    fracPerItem = 1.0 / items.high.float
     valueIntoItem = a mod fracPerItem
     normIntoItem = valueIntoItem / fracPerItem
   items[i1].mix(items[i2], normIntoItem)
