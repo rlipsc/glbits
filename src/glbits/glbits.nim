@@ -1,5 +1,5 @@
-import opengl, utils, strformat, debugutils
-export opengl
+import opengl, utils, strformat, debugutils, tables
+export opengl, tables
 
 
 type
@@ -58,12 +58,15 @@ type
     length*: GLsizei
     size*: GLint
 
+  ShaderUniforms* = Table[string, ShaderInputItem[Uniform]]
+  ShaderAttributes* = Table[string, ShaderInputItem[Attribute]]
+
   ShaderProgram* = object
     id*: GLuint
     linkedShaders*: seq[Shader]
     vertexMode*: GLenum
-    uniforms*: seq[ShaderInputItem[Uniform]]
-    attributes*: seq[ShaderInputItem[Attribute]]
+    uniforms*: ShaderUniforms
+    attributes*: ShaderAttributes
 
   ShaderProgramId* = distinct int
 
@@ -441,13 +444,12 @@ proc `$`*(shaderInput: ShaderInputItem): string =
 proc `$`*(shaderInputs: seq[ShaderInputItem]): string =
   for shaderInput in shaderInputs: result &= $shaderInput & "\n"
 
-proc getAttributes*(programId: GLuint): seq[ShaderInputItem[Attribute]] =
+proc getAttributes*(programId: GLuint): ShaderAttributes =
   ## Return a list of information about the attributes in this program.
   glUseProgram(programId);
 
   var attribCount: GLint
   glGetProgramiv(programId, GL_ACTIVE_ATTRIBUTES, attribCount.addr)
-  result.setLen attribCount
 
   var name = newString(64)
   for attrib in 0 ..< attribCount:
@@ -460,17 +462,19 @@ proc getAttributes*(programId: GLuint): seq[ShaderInputItem[Attribute]] =
 
     var loc = glGetAttribLocation(programId, name);
     if loc > -1:
-      result[attrib].name = name[0 ..< length]
-      result[attrib].id = loc.Attribute
-      result[attrib].glType = itemType
+      let n = name[0 ..< length]
+      result[n] = ShaderInputItem[Attribute](
+        name: n,
+        id: loc.Attribute,
+        glType: itemType
+      )
 
-proc getUniforms*(programId: GLuint): seq[ShaderInputItem[Uniform]] =
+proc getUniforms*(programId: GLuint): ShaderUniforms =
   ## Return a list of information about the uniforms in this program.
   glUseProgram(programId);
 
   var uniCount: GLint
   glGetProgramiv(programId, GL_ACTIVE_UNIFORMS, uniCount.addr)
-  result.setLen uniCount
 
   var name = newString(64)
   for uni in 0 ..< uniCount:
@@ -483,9 +487,12 @@ proc getUniforms*(programId: GLuint): seq[ShaderInputItem[Uniform]] =
 
     var loc = glGetUniformLocation(programId, name);
     if loc > -1:
-      result[uni].name = name[0 ..< length]
-      result[uni].id = loc.Uniform
-      result[uni].glType = itemType
+      let n = name[0 ..< length]
+      result[n] = ShaderInputItem[Uniform](
+        name: n,
+        id: loc.Uniform,
+        glType: itemType
+      )
 
 proc link*(program: var ShaderProgram) =
   ## Link shaders in the program together.
@@ -501,12 +508,12 @@ proc getCurrentProgram*: GLint =
   glGetIntegerv(GL_CURRENT_PROGRAM, result.addr)
 
 proc name*(program: ShaderProgram, attribute: Attribute): string =
-  for a in program.attributes:
+  for a in program.attributes.values:
     if a.id.int == attribute.int:
       return a.name
 
 proc name*(program: ShaderProgram, uniform: Uniform): string =
-  for u in program.uniforms:
+  for u in program.uniforms.values:
     if u.id.int == uniform.int:
       return u.name
 
@@ -681,7 +688,7 @@ proc activateAllAttributes*(programId: GLuint, report = false) =
   let attributes = programId.getAttributes
   if report:
     echo "Activated attributes for program id " & $programId.int & ":"
-  for attr in attributes:
+  for attr in attributes.values:
     glEnableVertexAttribArray(attr.id.GLuint)
     if report: echo " ", attr
 
