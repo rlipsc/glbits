@@ -173,6 +173,11 @@ proc dataSize*(tb: TexBillboard): int = tb.count * TexBillboardDataSize
 proc len*[T](tex: TextureData[T]): int = tex.width * tex.height
 
 
+iterator items*[T](tex: TextureData[T]): TexturePixel =
+  for i in 0 ..< tex.len:
+    yield tex.data[i]
+
+
 proc initTexture*[T](tex: var TextureData[T], width, height: int) =
   tex.width = width
   tex.height = height
@@ -436,6 +441,9 @@ proc updateTexture*(tb: var TexBillboard, newData: pointer, w, h: int, sdlTextur
 proc updateTexture*(tb: var TexBillboard, newTexture: GLTexture, sdlTexture = false) =
   tb.updateTexture(newTexture.data, newTexture.width, newTexture.height, sdlTexture)
 
+proc bindArray*(tb: TexBillboard) =
+  glBindVertexArray(tb.varrayId)
+
 
 template renderCore(tb: TexBillboard) =
   # bind results and draw
@@ -533,6 +541,7 @@ proc reverseXY*[T](tex: var TextureData[T]) =
 # -------------------
 # Procedural textures
 # -------------------
+
 
 proc newProcTexture*(fragment: string, max = 1): TexBillboard =
   ## Create a procedural texture using the `fragment` GLSL.
