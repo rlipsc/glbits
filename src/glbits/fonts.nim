@@ -7,7 +7,7 @@ type
   TextCache* = object
     texBB: TexBillboard
     texBBPosition: GLvectorf3
-    texBBScale, texSize: GLvectorf2
+    texBBScale, texScale: GLvectorf2
     texBBAngle: float
     texBBColour: GLvectorf4
     font*: FontPtr
@@ -18,7 +18,7 @@ type
     resolution*: GLvectorf2
 
 
-func customScale(tc: TextCache): bool = tc.texBBScale != [0.0'f32, 0.0'f32]
+func isCustomScale*(tc: TextCache): bool = tc.texBBScale != [0.0'f32, 0.0'f32]
 
 
 proc updateTexBB*(tc: var TextCache) =
@@ -27,10 +27,10 @@ proc updateTexBB*(tc: var TextCache) =
     curItem.positionData = [tc.texBBPosition[0], tc.texBBPosition[1], tc.texBBPosition[2], 1.0]
     curItem.colour = tc.texBBColour
     curItem.rotation[0] = tc.fontAngle
-    if tc.customScale:
+    if tc.isCustomScale:
       curItem.scale = tc.texBBScale
     else:
-      curItem.scale = tc.texSize
+      curItem.scale = tc.texScale
 
 
 from math import cos, sin, round
@@ -47,6 +47,10 @@ proc initTextCache*(): TextCache =
 
 proc freeTexture*(tc: var TextCache) =
   tc.texBB.freeTexture
+
+
+proc setTransform*(tc: var TextCache, matrix: GLmatrixf4) =
+  tc.texBB.setTransform matrix
 
 
 proc toSDLColour*(glColour: GLvectorf4): Color =
@@ -92,34 +96,36 @@ proc renderFont*(tc: var TextCache) =
   var newTex: SDLTexture # note: not initialised, used for casting.
   
   let
-    textureSize =
-      if not tc.customScale:
+    textureScale =
+      if not tc.isCustomScale:
         assert tc.resolution[0] > 0'f32 and tc.resolution[1] > 0'f32,
           "Provide non-zero dimensions to 'resolution' or use 'setFixedScale' to render a TextCache"
-        [surface.w.float32 / tc.resolution[0], surface.h.float32 / tc.resolution[1]]
+        let nScale = [surface.w.float32 / tc.resolution[0], surface.h.float32 / tc.resolution[1]]
+        # [nScale[0] * 2'f32, nScale[1] * 2'f32]
+        nScale
       else:
         tc.texBBScale
 
-  if textureSize[0] == 0.0:
-    quit $textureSize
+  assert textureScale[0] != 0.0,
+    "Rendering font text returned a zero size: " & $textureScale
 
   surface.doLocked:
-    # Reflect the font texture pixels on the Y axis.
     newTex.data = cast[SimpleSDLTextureArrayPtr](surface.pixels)
     newTex.width = surface.w
     newTex.height = surface.h
+    # Reflect the font texture pixels on the Y axis for OpenGL.
     newTex.reverseY
 
     # Note: the texture memory is freed after upload.
     tc.texBB.updateTexture(surface.pixels, surface.w, surface.h, sdlTexture = true, freeOld = false)
-    tc.texSize = textureSize
+    tc.texScale = textureScale
     tc.updateTexBB
 
   freeSurface(surface)
   tc.texBB.texture.data = nil
 
 
-func renderedSize*(tc: TextCache): GLvectorf2 = tc.texSize
+func renderedScale*(tc: TextCache): GLvectorf2 = tc.texScale
 
 
 proc staticLoadFont*(filename: static[string], pointSize = 24.cint): FontPtr =
@@ -169,7 +175,7 @@ proc setZ*(tc: var TextCache, zPos: float) =
 proc fixedScale*(tc: TextCache): GLvectorf2 = tc.texBBScale
 
 
-proc setFixedSize*(tc: var TextCache, scale: GLvectorf2) =
+proc setFixedScale*(tc: var TextCache, scale: GLvectorf2) =
   if tc.texBBScale != scale:
     tc.texBBScale = scale
 
@@ -194,7 +200,7 @@ proc `fontAngle=`*(tc: var TextCache, angle: float) =
   tc.fontAngle = angle
 
 
-proc size*(tc: TextCache): GLvectorf2 = tc.texSize
+proc scale*(tc: TextCache): GLvectorf2 = tc.renderedScale
 
 
 proc text*(tc: TextCache): string = tc.fontText
@@ -211,6 +217,9 @@ proc renderText*(tc: var TextCache, force = false) =
     tc.renderFont
 
 
+func needsRender*(tc: TextCache): bool = tc.needsRender
+
+
 proc update*(tc: var TextCache, textStr: string, x, y: GLfloat, force = false) =
   tc.text = textStr
   tc.position = [x, y]
@@ -218,11 +227,13 @@ proc update*(tc: var TextCache, textStr: string, x, y: GLfloat, force = false) =
 
 
 proc update*(tc: var TextCache, textStr: string, x, y: GLfloat, fixedScale: GLvectorf2, force = false) =
-  tc.setFixedSize fixedScale
+  tc.setFixedScale fixedScale
   tc.update(textStr, x, y, force)
 
 
 proc render*(tc: var TextCache) =
+  ## Renders the font text to a texture if necessary,
+  ## then draws the texture to the frame buffer.
   if tc.needsRender:
     tc.renderText
   tc.updateTexBB
