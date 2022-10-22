@@ -129,7 +129,7 @@ template initSdlOpenGl*(width = 640.cint, height = 480.cint, xOffset = 50.cint, 
     raise newException(Exception, "SDL_GetDesktopDisplayMode failed: " & getRes.repr & ": " & $getError())
 
   var
-    sdlDisplay {.inject.} =
+    sdlDisplay* {.inject.} =
       if setFullScreen:
         SDLDisplay(x: 0, y: 0, w: dm.w, h: dm.h, changed: true)
       else:
@@ -145,8 +145,8 @@ template initSdlOpenGl*(width = 640.cint, height = 480.cint, xOffset = 50.cint, 
   sdlDisplay.update
 
   let
-    sdlWindow {.inject.} = createWindow("SDL/OpenGL Skeleton", sdlDisplay.x, sdlDisplay.y, sdlDisplay.w, sdlDisplay.h, windowFlags)
-    sdlContext {.inject, used.} = sdlWindow.glCreateContext()
+    sdlWindow* {.inject.} = createWindow("SDL/OpenGL Skeleton", sdlDisplay.x, sdlDisplay.y, sdlDisplay.w, sdlDisplay.h, windowFlags)
+    sdlContext* {.inject, used.} = sdlWindow.glCreateContext()
 
 
   # Initialize OpenGL
