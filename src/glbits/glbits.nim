@@ -1,4 +1,4 @@
-import opengl, utils, strformat, debugutils, tables
+import opengl, utils, strutils, strformat, debugutils, tables
 export opengl, tables
 
 
@@ -305,8 +305,6 @@ proc initVAO*(vao: var VertexArrayObject) =
 proc initVAO*: VertexArrayObject =
   result.initVao
 
-import strformat
-
 proc add*(varray: var VertexArrayObject, vbo: var VertexBufferObject) =
   varray.bindArray
   assert vbo.initialised
@@ -359,15 +357,18 @@ proc `$`*(varray: VertexArrayObject): string =
 proc logShader*(shaderId: GLuint) =
   var length: GLint = 0
   glGetShaderiv(shaderId, GL_INFO_LOG_LENGTH, length.addr)
-  var log: string = newString(length.int)
-  glGetShaderInfoLog(shaderId, length, nil, log)
-  echo "Shader log: ", log
+  let
+    log = alloc0(length.int + 1)
+    str = cast[cstring](log)
+  glGetShaderInfoLog(shaderId, length, nil, str)
+  echo "Shader log: ", str
+  log.deAlloc
 
 proc log*(shader: Shader): string =
   var maxLen: GLint
   glGetShaderiv(shader.id, GL_INFO_LOG_LENGTH, maxLen.addr)
   result = newString(maxLen.int)
-  glGetShaderInfoLog(shader.id, maxLen, nil, result)
+  glGetShaderInfoLog(shader.id, maxLen, nil, result.cstring)
 
 proc newShader*(shader: var Shader, vertexType: GLenum, source: string) =
   shader.glsl = source
@@ -436,7 +437,7 @@ proc log*(program: ShaderProgram): string =
   glGetProgramiv(program.id, GL_INFO_LOG_LENGTH, addr maxLen);
   # The maxLength includes the NULL character
   result = newString(maxLen.int)
-  glGetProgramInfoLog(program.id, maxLen, addr maxLen, result)
+  glGetProgramInfoLog(program.id, maxLen, addr maxLen, result.cstring)
 
 proc `$`*(shaderInput: ShaderInputItem): string =
   "(name: " & shaderInput.name & ", id: " & $shaderInput.id.int & ", type: " & shaderInput.glType.glTypeToStr & ", size: " & $shaderInput.size.int & ")"
@@ -458,9 +459,9 @@ proc getAttributes*(programId: GLuint): ShaderAttributes =
       itemType: GLenum
       length: GLsizei
       buffSize = name.len.GLsizei
-    glGetActiveAttrib(programId, attrib.GLuint, buffSize, length.addr, size.addr, itemType.addr, name);
+    glGetActiveAttrib(programId, attrib.GLuint, buffSize, length.addr, size.addr, itemType.addr, name.cstring);
 
-    var loc = glGetAttribLocation(programId, name);
+    var loc = glGetAttribLocation(programId, name.cstring);
     if loc > -1:
       let n = name[0 ..< length]
       result[n] = ShaderInputItem[Attribute](
@@ -483,9 +484,9 @@ proc getUniforms*(programId: GLuint): ShaderUniforms =
       itemType: GLenum
       length: GLsizei
       buffSize = name.len.GLsizei
-    glGetActiveUniform(programId, uni.GLuint, buffSize, length.addr, size.addr, itemType.addr, name);
+    glGetActiveUniform(programId, uni.GLuint, buffSize, length.addr, size.addr, itemType.addr, name.cstring);
 
-    var loc = glGetUniformLocation(programId, name);
+    var loc = glGetUniformLocation(programId, name.cstring);
     if loc > -1:
       let n = name[0 ..< length]
       result[n] = ShaderInputItem[Uniform](
@@ -494,10 +495,21 @@ proc getUniforms*(programId: GLuint): ShaderUniforms =
         glType: itemType
       )
 
+
 proc link*(program: var ShaderProgram) =
   ## Link shaders in the program together.
   glLinkProgram(program.id)
-  doAssert program.isLinked, "Error linking shader program: " & program.log
+  if not program.isLinked:
+    when compileOption("assertions"):
+      for i, shader in program.linkedShaders:
+        echo "Shader ", i
+
+        var i: int
+        for line in shader.glsl.splitLines:
+          echo "  ", i, ": ", line
+          i.inc
+
+    doAssert program.isLinked, "Error linking shader program: " & program.log
   debugMsg &"Linked shader program {program.id.int}"
 
   # Fetch uniforms and attributes.

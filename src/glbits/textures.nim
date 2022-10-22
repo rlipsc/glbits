@@ -13,9 +13,7 @@ const
     layout(location = 3) in vec2 scale;
     layout(location = 4) in vec3 vertex;
 
-    uniform vec2 globalOffset;
-    uniform vec2 globalRotation;
-    uniform float globalAspect;
+    uniform mat4 transform;
 
     in vec2 texcoord;
     out vec4 FragCol;
@@ -42,15 +40,11 @@ const
       vec3 position;
       // NB: rotation.x is angle, rotation.y is unused.
       float angle = rotation.x;
-      mat2 localRot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+      mat2 localRot = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
       position.xy = (localRot * (vertex.xy * scale)) + positionData.xy;
       position.z = positionData.z + vertex.z;
 
-      vec2 p = vec2(position.x, position.y) + globalOffset;
-      mat2 globalRot = mat2(globalRotation.x,-globalRotation.y, globalRotation.y, globalRotation.x);
-      p = globalRot * p;
-      
-      gl_Position = vec4(p.x * globalAspect, p.y, position.z, 1.0f);
+      gl_Position = transform * vec4(position, 1.0);
 
       FragCol = colour;
       Texcoord = texcoord;
@@ -122,16 +116,19 @@ type
 
   TexBillboard* = ref object
     manualProgram: bool
+    manualTextureBo: bool
+
     bos*: BufferObjects
     rendering*: Rendering
-    linearFilteringSampler: GLuint
+    filteringSampler*: GLuint
     varrayId: GLuint
-    offsetId*: Uniform
-    rotMatId*: Uniform
-    aspectId*: Uniform
+
+    transform*: Uniform
     texId: Uniform
+
     texture*: GLTexture
     texAttribId: Attribute
+
     model: seq[TextureVertex]
     modelBuf*: TexBillboardModelPtr
     dataBuf*: TexBillboardArrayPtr
@@ -140,9 +137,9 @@ type
     lastItemOffset: int
     rotMat*: GLvectorf2
     offset*: GLvectorf2
-    aspect*: GLfloat
     scale*: float
     hidden*: bool # turns off rendering when set
+
 
 let
   TexBillboardDataSize*: GLsizei = TexBillboardData.sizeof.GLsizei
@@ -157,6 +154,7 @@ const rectangle: array[6, TextureVertex] = [
   [-1.0.GLFloat, -1.0, 0.0,   0.0, 0.0],
   [1.0.GLFloat, 1.0, 0.0,     1.0, 1.0]
 ]
+
 
 proc programId*(tb: TexBillboard): GLuint = tb.rendering.program.id
 
@@ -188,8 +186,13 @@ proc clearTexture*[T](tex: var TextureData[T]) =
 
 
 proc freeTexture*[T](tex: var TextureData[T]) =
-  if tex.data != nil: tex.data.deAlloc
-  tex.data = nil
+  if tex.data != nil:
+    tex.data.deAlloc
+    tex.data = nil
+
+
+proc freeTexture*(tex: var TexBillboard) =
+  tex.texture.freeTexture
 
 
 proc uploadModel*(tb: var TexBillboard) =
@@ -201,21 +204,37 @@ proc uploadModel*(tb: var TexBillboard) =
   glBufferData(GL_ARRAY_BUFFER, GLsizei(tb.model.len * TextureVertex.sizeOf), tb.modelBuf, GL_STATIC_DRAW) # copy data
 
 
+proc attachAndLink*(tb: var TexBillboard) =
+  template program: untyped = tb.rendering.program
+
+  program.newShaderProgram()
+  program.attach tb.rendering.vertex
+  program.attach tb.rendering.fragment
+  program.link
+  program.activate
+
+
+proc setTransform*(tb: var TexBillboard, matrix: GLmatrixf4) =
+  var m = matrix
+  tb.withProgram:
+    tb.transform.setMat4 m
+
+
 proc newTexBillboard*(vertexGLSL = defaultTextureVertexGLSL, fragmentGLSL = defaultTextureFragmentGLSL,
-    max = 1, model: openarray[TextureVertex] = rectangle, modelScale = 1.0, manualTextureBo = false, manualProgram = false, renderAspect = 1.0): TexBillboard =
+    max = 1, model: openarray[TextureVertex] = rectangle, modelScale = 1.0, transform = mat4(1.0),
+    manualTextureBo = false, manualProgram = false): TexBillboard =
   ## A container for instanced texture billboards. Use `addItems` or `addFullscreenItem` to add an instance.
   ## By default a program is generated along with a texture that's shared between all instances, defined with `updateTexture`.
   ## You can override this behaviour using the following parameters:
-  ##   `manualTextureBo = true`: Doesn't populate `bos.textureBO` - useful if you already have a texture id you want to assign.
-  ##   `manualProgram = true`: Doesn't create a program or fetch uniforms and acts like a simple container.
+  ##   `manualTextureBo = true`: doesn't populate `bos.textureBO` - useful if you already have a texture id you want to assign.
+  ##   `manualProgram = true`: doesn't create a program or fetch uniforms and acts like a simple container.
   ##                           Use with `renderWithProgram` or similar for procedural textures or lighting effects.
-  ## (for instance for procedural generation with a shader)
   result = new TexBillboard
   result.manualProgram = manualProgram
+  result.manualTextureBo = manualTextureBo
   result.count = max
   result.rotMat[0] = c0
   result.rotMat[1] = s0
-  result.aspect = renderAspect
   result.curItemOffset = 0
 
   let modelBytes = GLsizei(model.len * TextureVertex.sizeOf)
@@ -225,20 +244,11 @@ proc newTexBillboard*(vertexGLSL = defaultTextureVertexGLSL, fragmentGLSL = defa
   result.rendering.vertex.newShader(GL_VERTEX_SHADER, vertexGLSL)
   result.rendering.fragment.newShader(GL_FRAGMENT_SHADER, fragmentGLSL)
 
-  if not manualProgram:
-    # Program init.
-    template program: untyped = result.rendering.program
-    program.newShaderProgram()
-    program.attach result.rendering.vertex
-    program.attach result.rendering.fragment
-    program.link
-    program.activate
-    result.offsetId =       program.id.getUniformLocation("globalOffset")
-    result.rotMatId =       program.id.getUniformLocation("globalRotation")
-    result.aspectId =       program.id.getUniformLocation("globalAspect")
-    result.texId =          program.id.getUniformLocation("tex")
+  template program: untyped = result.rendering.program
 
-    result.aspectId.setFloat renderAspect
+  if not manualProgram:
+    result.attachAndLink
+    result.transform = program.id.getUniformLocation("transform")
 
   result.model = @[]
   for idx, item in model:
@@ -251,12 +261,12 @@ proc newTexBillboard*(vertexGLSL = defaultTextureVertexGLSL, fragmentGLSL = defa
     result.modelBuf[idx] = scaledItem
 
   # Init sampler for texture.
-  glGenSamplers(1, result.linearFilteringSampler.addr)
-  glBindSampler(0, result.linearFilteringSampler)
-  glSamplerParameteri(result.linearFilteringSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST )
-  glSamplerParameteri(result.linearFilteringSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST )
-  glSamplerParameteri(result.linearFilteringSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-  glSamplerParameteri(result.linearFilteringSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+  glGenSamplers(1, result.filteringSampler.addr)
+  glBindSampler(0, result.filteringSampler)
+  glSamplerParameteri(result.filteringSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST )
+  glSamplerParameteri(result.filteringSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST )
+  glSamplerParameteri(result.filteringSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+  glSamplerParameteri(result.filteringSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
 
   glGenVertexArrays(1, result.varrayId.addr)
   glBindVertexArray(result.varrayId)
@@ -292,37 +302,38 @@ proc newTexBillboard*(vertexGLSL = defaultTextureVertexGLSL, fragmentGLSL = defa
   if not manualTextureBo:
     # Create texture buffer
     glGenTextures(1, result.bos.textureBO.addr)
+    result.texId = program.id.getUniformLocation("tex")
 
-  glActiveTexture(GL_TEXTURE0)
   # setup texture buffer
-  if not manualProgram:
+  if not(manualTextureBo or manualProgram):
+    glActiveTexture(GL_TEXTURE0)
     result.texAttribId = result.rendering.program.getAttributeLocation("texcoord")
-    glBindBuffer(GL_ARRAY_BUFFER, result.bos.modelBO)
     glEnableVertexAttribArray(result.texAttribId.GLuint)
     # Texture coords are interlaced with vertex coords.
     glVertexAttribPointer(result.texAttribId.GLuint, 2, cGL_FLOAT, GL_FALSE.GLBoolean, modelDataSize, cast[pointer](GLFloat.sizeOf * 3))
+
+  if not manualProgram:
+    glBindBuffer(GL_ARRAY_BUFFER, result.bos.modelBO)
     result.uploadModel
+    result.setTransform transform
 
 
 proc getUniformLocation*(tb: TexBillboard, name: string, allowMissing = false): Uniform =
   tb.rendering.program.id.getUniformLocation(name, allowMissing)
 
 
-proc manualInit*(tb: var TexBillboard, program: GLuint) =
+proc manualInit*(tb: var TexBillboard, program: GLuint, customUniforms = true) =
   ## If you have your own program, use this to sync the uniforms required.
   glUseProgram(program)
 
   program.activateAllAttributes(true)
 
-  tb.offsetId = getUniformLocation(program, "globalOffset", true)
-  tb.rotMatId = getUniformLocation(program, "globalRotation", true)
-  tb.aspectId = getUniformLocation(program, "globalAspect", true)
-  tb.texId = getUniformLocation(program, "tex", true)
+  if not customUniforms:
+    tb.texId = getUniformLocation(program, "tex", true)
 
   glBindVertexArray(tb.varrayId)
   glBindBuffer(GL_ARRAY_BUFFER, tb.bos.modelBO)
   glBindAttribLocation(program, 5, "texcoord")
-
   glEnableVertexAttribArray(5)
   glVertexAttribPointer(5, 2, cGL_FLOAT, GL_FALSE.GLBoolean, modelDataSize, cast[pointer](GLFloat.sizeOf * 3)) # shared with vertex coords
   tb.uploadModel
@@ -402,7 +413,6 @@ proc addFullScreenItem*(tb: var TexBillboard, zPos: float = 0.0) =
 
 proc updateTexture*(tb: var TexBillboard, sdlTexture = false) =
   glBindTexture(GL_TEXTURE_2D, tb.bos.textureBO)
-  assert(tb.texture.data != nil)
   if sdlTexture:
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F.GLInt, tb.texture.width.GLsizei, tb.texture.height.GLsizei, 0, GL_BGRA, GL_UNSIGNED_BYTE, tb.texture.data)
   else:
@@ -427,22 +437,11 @@ proc updateTexture*(tb: var TexBillboard, newTexture: GLTexture, sdlTexture = fa
   tb.updateTexture(newTexture.data, newTexture.width, newTexture.height, sdlTexture)
 
 
-proc updateAspect*(tb: var TexBillboard, ratio: GLfloat) =
-  let v = 1.0 / ratio
-  tb.withProgram:
-    tb.aspect = v
-    tb.aspectId.setFloat v
-
-
-template renderCore(tb: TexBillboard, program: GLuint) =
-  tb.offsetId.setVec2 tb.offset
-  tb.rotMatId.setVec2 tb.rotMat
-  tb.aspectId.setFloat tb.aspect
-
+template renderCore(tb: TexBillboard) =
   # bind results and draw
   glBindVertexArray(tb.varrayId)
 
-  if not tb.manualProgram:
+  if not tb.manualTextureBo:
     glActiveTexture(GL_TEXTURE0)
     glBindTexture(GL_TEXTURE_2D, tb.bos.textureBO)
     setInt(tb.texId, 0)
@@ -450,29 +449,26 @@ template renderCore(tb: TexBillboard, program: GLuint) =
   glEnableClientState(GL_VERTEX_ARRAY)
   debugMsg "Drawing " & $tb.curItemOffset & " models of " & $tb.model.len & " vertices"
   glDrawArraysInstanced( GL_TRIANGLES, 0, tb.model.len.GLSizei, tb.curItemOffset.GLSizei )
-
   glDisableClientState( GL_VERTEX_ARRAY )
-
-
-proc render*(tb: TexBillboard) =
-  ## Render the texture billboard.
-  if not tb.hidden:
-    tb.withProgram:
-      tb.renderCore(tb.rendering.program.id)
 
 
 template renderSetup*(tb: TexBillboard, actions: untyped) =
   if not tb.hidden:
     tb.withProgram:
       actions
-      renderCore(tb, tb.rendering.program.id)
+      renderCore(tb)
 
+
+proc render*(tb: TexBillboard) =
+  ## Render the texture billboard.
+  tb.renderSetup:
+    discard
 
 template renderWithProgram*(tb: TexBillboard, program: GLuint, actions: untyped): untyped =
   if not tb.hidden:
-    glUseProgram(program)    
+    glUseProgram(program)
     actions
-    renderCore(tb, program)
+    renderCore(tb)
 
 
 template forPixels*[T](tex: var TextureData[T], actions: untyped): untyped =
@@ -481,9 +477,9 @@ template forPixels*[T](tex: var TextureData[T], actions: untyped): untyped =
     py {.inject.}: int
     pi {.inject.}: int
   
-  for yi in 0..< tex.height:
+  for yi in 0 ..< tex.height:
     py = yi
-    for xi in 0..< tex.width:
+    for xi in 0 ..< tex.width:
       px = xi
       pi = tex.index(xi, yi)
       actions
@@ -495,9 +491,9 @@ template forHalfPixels*[T](tex: var TextureData[T], actions: untyped): untyped =
     py {.inject.}: int
     pi {.inject.}: int
   
-  for yi in 0..< tex.height div 2:
+  for yi in 0 ..< tex.height div 2:
     py = yi
-    for xi in 0..< tex.width:
+    for xi in 0 ..< tex.width:
       px = xi
       pi = tex.index(xi, yi)
       actions
@@ -533,3 +529,17 @@ proc reverseXY*[T](tex: var TextureData[T]) =
     tex.data[pi] = tex.data[newIdx]
     tex.data[newIdx] = curValue
 
+
+# -------------------
+# Procedural textures
+# -------------------
+
+proc newProcTexture*(fragment: string, max = 1): TexBillboard =
+  ## Create a procedural texture using the `fragment` GLSL.
+  newTexBillboard(
+    manualProgram = false,
+    manualTextureBo = true,
+    vertexGLSL = defaultTextureVertexGLSL,
+    fragmentGLSL = fragment,
+    max = max
+  )

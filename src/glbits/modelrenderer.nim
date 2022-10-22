@@ -1,7 +1,8 @@
 ## This module implements a simple, ready to use 3D model renderer.
 ## Note: Make sure to set the instance colour, as the default colour is black.
 
-import glbits, glbits/uniforms
+import glbits, glbits/[uniforms, utils]
+
 export glbits
 
 type
@@ -12,8 +13,7 @@ type
   ModelStorage = object
     programId: ShaderProgramId
     vao: VertexArrayObject
-    aspect: float
-    aspectUniform: Uniform
+    transform: Uniform
 
 const
   VertexBufferIndex* = 0
@@ -37,7 +37,7 @@ const
     layout(location = 4) in float angle;
     layout(location = 5) in vec4 colour;
 
-    uniform float aspectRatio;
+    uniform mat4 transform;
 
     out vec4 col;
 
@@ -48,9 +48,9 @@ const
 
       mat2 rotation = mat2(c, s, -s, c);
       vec3 rotated = vec3(rotation * model.xy, model.z);
-      vec3 vertex = rotated * scale + position;
+      vec4 vertex = vec4(rotated * scale + position, 1.0f);
 
-      gl_Position = vec4(vertex.x * aspectRatio, vertex.y, vertex.z, 1.0f);
+      gl_Position = transform * vertex;
       col = vertexCol * colour;
     }
     """
@@ -93,10 +93,34 @@ iterator allModels*: ModelId =
 
 proc newModelRenderer*: ShaderProgramId = newShaderProgramId(vertexGLSL, fragmentGLSL)
 
+proc programId*(modelId: ModelId): ShaderProgramId =
+  models[modelId.int].programId
+
+proc setTransform*(modelId: ModelId, matrix: GLmatrixf4) =
+  ## Set the transformation matrix applied to vertices for this model.
+  var m = matrix
+  modelId.programId.activate
+  models[modelId.int].transform.setMat4 m
+
+proc setTransform*(matrix: GLmatrixf4) =
+  ## Set the transformation matrix applied to vertices for all models.
+  var m = matrix
+  for modelId in 0 ..< models.len:
+    models[modelId.int].programId.activate
+    models[modelId.int].transform.setMat4 m
+
 proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3], colours: openarray[GLvectorf4], aspectRatio = 1.0): ModelId =
   ## Create a new model attached to a shader program.
+  models.add ModelStorage(
+    programId: shaderProgramId,
+    transform: shaderProgramId.getUniformLocation("transform", true),
+  )
+
+  result = models.high.ModelId
+  template vao: VertexArrayObject = models[result.int].vao
+  vao.initVAO()
+
   var
-    vao = initVAO()
     model =     initVBO(VertexBufferIndex.GLuint, vertices)
     vertCols =  initVBO(VertexColBufferIndex.GLuint, colours)
     positions = initVBO(PositionBufferIndex.GLuint, 0, fcThree)
@@ -116,16 +140,7 @@ proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3]
   vao.add rotations
   vao.add colours
 
-  let aspUni = shaderProgramId.getUniformLocation("aspectRatio", false)
-  aspUni.setFloat aspectRatio
-
-  models.add ModelStorage(
-    programId: shaderProgramId,
-    vao: vao,
-    aspect: aspectRatio,
-    aspectUniform: aspUni
-  )
-  result = models.high.ModelId
+  result.setTransform mat4(1.0)
 
 proc setMaxInstanceCount*(modelId: ModelId, count: int) =
   ## Does not set current instance counts.
@@ -143,18 +158,6 @@ proc updateInstance*(modelId: ModelId, index: int, item: ModelInstanceDetails) =
   modelId.scaleVBOArray[index] = item.scale
   modelId.rotationVBOArray[index] = [item.angle]
   modelId.colVBOArray[index] = item.col
-
-proc programId*(modelId: ModelId): ShaderProgramId =
-  models[modelId.int].programId
-
-proc aspect*(modelId: ModelId): float = models[modelId.int].aspect
-
-proc `aspect=`*(modelId: ModelId, value: float) =
-  assert value != 0.0
-  let v = 1.0 / value
-  models[modelId.int].aspect = v
-  modelId.programId.activate
-  models[modelId.int].aspectUniform.setFloat v
 
 template bindModel(modelId: ModelId) =
   template model: untyped = models[modelId.int]
@@ -193,7 +196,7 @@ proc renderModels* =
     let maxSize = models[modelIndex].vao.buffers[PositionBufferIndex].dataLen
     modelIndex.ModelId.renderModel(maxSize)
 
-import random, utils
+import random
 from math import TAU, cos, sin
 
 proc makeCircleModel*(shaderProgram: ShaderProgramId, triangles: int, insideCol, outsideCol: GLvectorf4, roughness = 0.0, maxInstances = 0): ModelId =

@@ -1,5 +1,5 @@
 when defined(debugGL):
-  import os
+  import os, macros, strutils
 
 proc debugMsg*(s: string) =
   ## Report the string `s` along with the line number and proc it was invoked outside of glbits.
@@ -7,18 +7,31 @@ proc debugMsg*(s: string) =
     let entries = getStackTraceEntries()
     const sourceDir = currentSourcePath().parentDir
 
-    # Find first stack line outside of the current source directory.
-    var stackIdx: int
-    for idx in countDown(entries.high, 0):
+    var li: string
+    if entries.len > 0:
+      # Find first stack line outside of the glbits source directory.
+      var
+        stackIdx = entries.high
+        found: bool
+      
+      for idx in countDown(entries.high, 0):
+        let
+          fn = $entries[idx].filename
+          dir = fn.parentDir
+        
+        if sourceDir notin dir:
+          found = true
+          stackIdx = idx
+          break
+     
       let
-        fn = $entries[idx].filename
-        dir = fn.parentDir
-      if dir != sourceDir:
-        stackIdx = idx
-        break
+        st = entries[stackIdx]
+        fnStr = $(st.filename)
+        fn = fnStr.extractFilename 
+      li = $LineInfo(filename: fnStr, line: st.line, column: 0)
+
     let
-      st = entries[stackIdx]
-      fnStr = $(st.filename)
-      fn = fnStr.extractFilename 
-      debugPrefix = "GLBits [" & fn & " " & $st.procname & " line: " & $st.line & "] "
-    echo debugPrefix & s
+      padLen = 85
+      pad = if s.len > padLen: "" else: " ".repeat(padLen - s.len)
+
+    echo "GLBits " & s & " " & $pad & " " & $li

@@ -44,20 +44,35 @@
 import sdl2, opengl
 
 type
+  SDLButton* = uint8
+  SDLButtons* = set[uint8]
+
   SDLDisplay* = object
     x*, y*, w*, h*: cint
     res*: tuple[x, y: cint]
     aspect*: float
     fullScreen*: bool
     changed*: bool
-  
+
+  SDLMouseChangeKind* = enum mcPosition, mcButtonUp, mcButtonDown
+  SDLMousePosDiff* = object
+    sx*, sy*: cint
+    gl*: GLvectorf2
+
+  SDLMouseChange* = object
+    kinds*: set[SDLMouseChangeKind]
+    pos*: SDLMousePosDiff
+    buttons*: tuple[down, up: SDLButtons]
+
   SDLMousePos* = object
     sx*, sy*: cint
     gl*: GLvectorf2
-    changed*: bool
+    buttons*: SDLButtons
+    changes*: SDLMouseChange
 
   KeyCodes = ptr array[0 .. SDL_NUM_SCANCODES.int, uint8]
 
+func changed*(mp: SDLMousePos): bool = mp.changes.kinds.len > 0
 
 proc normalise*(sdlDisplay: SDLDisplay, pos: array[2, int | cint]): GLvectorf2 =
   ## Convert a screen pixel coordinate to an OpenGl normalised -1.0 .. 1.0.
@@ -135,12 +150,16 @@ template initSdlOpenGl*(width = 640.cint, height = 480.cint, xOffset = 50.cint, 
 
   # Initialize OpenGL
   loadExtensions()
-  glClearColor(0.0, 0.0, 0.0, 1.0)                  # Set background color to black and opaque
-  glClearDepth(1.0)                                 # Set background depth to farthest
+
   glEnable(GL_DEPTH_TEST)                           # Enable depth testing for z-culling
+  glClearDepth(1.0)                                 # Set background depth to farthest
   glDepthFunc(GL_LEQUAL)                            # Set the type of depth-test
+  glDepthMask(GL_TRUE)
+  glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);  
+
   glEnable(GL_BLEND)                                # Enable alpha channel
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+  glClearColor(0.0, 0.0, 0.0, 0.0)                  # Set background color to transparent black
 
 
 template pollEvents*(events, actions: untyped) =
@@ -191,8 +210,8 @@ template pollEvents*(events, actions: untyped) =
       keyStates {.inject, used.}: KeyCodes = getKeyboardState()
 
     while running:
-      mouseInfo.changed = false
       sdlDisplay.changed = false
+      mouseInfo.changes = default(SDLMouseChange)
 
       while pollEvent(event):
 
@@ -217,15 +236,33 @@ template pollEvents*(events, actions: untyped) =
           of MouseMotion:
             # Map SDL mouse position to -1..1 for OpenGL.
             let mm = evMouseMotion(event)
+
+            let
+              nX = mm.x.GLfloat / sdlDisplay.w.GLfloat
+              nY = 1.0 - (mm.y.GLfloat / sdlDisplay.h.GLfloat)
+              gl = [(nX * 2.0'f32) - 1.0'f32, (nY * 2.0'f32) - 1.0'f32]
+
+            mouseInfo.changes.kinds.incl mcPosition
+            mouseInfo.changes.pos.sx = mm.x - mouseInfo.sx
+            mouseInfo.changes.pos.sy = mm.y - mouseInfo.sy
+            mouseInfo.changes.pos.gl = [mouseInfo.gl[0] - gl[0], mouseInfo.gl[1] - gl[1]]
+
+            mouseInfo.gl = gl
             mouseInfo.sx = mm.x
             mouseInfo.sy = mm.y
-            mouseInfo.changed = true
-            let
-              nX = mm.x.float / sdlDisplay.w.float
-              nY = 1.0 - (mm.y.float / sdlDisplay.h.float)
-            mouseInfo.gl[0] = (nX * 2.0) - 1.0
-            mouseInfo.gl[1] = (nY * 2.0) - 1.0
+
+          of MouseButtonDown:
+            var mb = evMouseButton(event)
+            mouseInfo.changes.kinds.incl mcButtonDown
+            mouseInfo.changes.buttons.down.incl mb.button
+            mouseInfo.buttons.incl mb.button
           
+          of MouseButtonUp:
+            var mb = evMouseButton(event)
+            mouseInfo.changes.kinds.incl mcButtonUp
+            mouseInfo.changes.buttons.up.incl mb.button
+            mouseInfo.buttons.excl mb.button
+
           else:
             # User events.
             events

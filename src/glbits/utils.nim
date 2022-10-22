@@ -1,32 +1,36 @@
 import opengl, macros, random
 
-from math import round, `mod`, sqrt, cos, sin, arcTan2, PI, TAU, floor
+from math import round, `mod`, sqrt, cos, sin, tan, arcTan2, PI, TAU, floor
 
-#------------------------------------------------------------------------
-# Utility routines: swizzling, named access to indexes, and operators for
-# basic math on GL vectors.
-#------------------------------------------------------------------------
 
-type GLVector* = GLvectorf2 or GLvectorf3 or GLvectorf4
+## Utility routines: swizzling, named access to indexes, and operators for
+## basic math on GL vectors.
 
-template vec2*(x, y: float|float32): GLvectorf2 = [x.GLfloat, y]
-template vec3*(x, y, z: float|float32): GLvectorf3 = [x.GLfloat, y, z]
-template vec4*(r, g, b, a: float|float32): GLvectorf4 = [r.GLfloat, g, b, a]
 
-template vec2*(v: float|float32): GLvectorf2 = [v.GLfloat, v]
-template vec3*(v: float|float32): GLvectorf3 = [v.GLfloat, v, v]
-template vec4*(v: float|float32): GLvectorf4 = [v.GLfloat, v, v, v]
+type
+  GLVector* = GLvectorf2|GLvectorf3|GLvectorf4
 
-template x*(v: GLVector): float = v[0]
-template y*(v: GLVector): float = v[1]
-template z*(v: GLvectorf3 | GLvectorf4): float = v[2]
-template w*(v: GLvectorf3 | GLvectorf4): float = v[3]
+# Using `SomeInteger|SomeFloat` rather than `SomeNumber` allows different
+# types per parameter, e.g., `vec2(1, 2.3)`.
+
+template vec2*(x, y: SomeInteger|SomeFloat): GLvectorf2 = [x.GLfloat, y.GLfloat]
+template vec3*(x, y, z: SomeInteger|SomeFloat): GLvectorf3 = [x.GLfloat, y.GLfloat, z.GLfloat]
+template vec4*(r, g, b, a: SomeInteger|SomeFloat): GLvectorf4 = [r.GLfloat, g.GLfloat, b.GLfloat, a.GLfloat]
+
+template vec2*(v: SomeInteger|SomeFloat): GLvectorf2 = [v.GLfloat, v.GLfloat]
+template vec3*(v: SomeInteger|SomeFloat): GLvectorf3 = [v.GLfloat, v.GLfloat, v.GLfloat]
+template vec4*(v: SomeInteger|SomeFloat): GLvectorf4 = [v.GLfloat, v.GLfloat, v.GLfloat, v.GLfloat]
+
+template x*(v: GLVector): GLfloat = v[0]
+template y*(v: GLVector): GLfloat = v[1]
+template z*(v: GLvectorf3 | GLvectorf4): GLfloat = v[2]
+template w*(v: GLvectorf3 | GLvectorf4): GLfloat = v[3]
 template xy*(v: GLvectorf3): GLvectorf2 = vec2(v[0], v[1])
 template xyz*(v: GLvectorf4): GLvectorf3 = vec3(v[0], v[1], v[2])
 
-template r*(v: GLVector): float = v.x
-template g*(v: GLVector): float = v.y
-template b*(v: GLvectorf3 | GLvectorf4): float = v.z
+template r*(v: GLVector): GLfloat = v.x
+template g*(v: GLVector): GLfloat = v.y
+template b*(v: GLvectorf3 | GLvectorf4): GLfloat = v.z
 template a*(v: GLvectorf4): GLfloat = v.w
 template rg*(v: GLVector): GLvectorf2 = v.xy
 template rgb*(v: GLvectorf3 | GLvectorf4): GLvectorf3 = v.xyz
@@ -55,7 +59,7 @@ template `rgb=`*(v: GLVectorf3 | GLVectorf4, rgb: GLvectorf3) =
   v.g = rgb.g
   v.b = rgb.b
 
-func brighten*[T: GLvectorf3|GLvectorf4](colour: T, value: float): T =
+func brighten*[T: GLvectorf3|GLvectorf4](colour: T, value: GLfloat): T =
   ## Multiply the rgb elements of a colour without changing alpha.
   result[0] = colour[0] * value
   result[1] = colour[1] * value
@@ -63,14 +67,14 @@ func brighten*[T: GLvectorf3|GLvectorf4](colour: T, value: float): T =
   when colour is GLVectorf4:
     result[3] = colour[3]
 
-func sqrLen*(v: openarray[GLfloat]): float {.inline.} =
+func sqrLen*(v: openarray[GLfloat]): GLfloat {.inline.} =
   for i in 0 ..< v.len:
     {.unroll.}
     result += v[i] * v[i]
 
-template length*(v: openarray[GLfloat]): float = sqrt(v.sqrLen)
+template length*(v: openarray[GLfloat]): GLfloat = sqrt(v.sqrLen)
 
-proc rotate2d*[T: GLVectorf2 | GLvectorf3](v: var T, angle: float) =
+proc rotate2d*[T: GLVectorf2 | GLvectorf3](v: var T, angle: GLfloat) =
   ## Sign donates direction
   let
     s = sin(angle)
@@ -79,16 +83,16 @@ proc rotate2d*[T: GLVectorf2 | GLvectorf3](v: var T, angle: float) =
   v.y = c * v.y + s * v.x
   v.x = newX
 
-proc rotated2d*[T: GLVectorf2 | GLvectorf3](v: T, angle: float): T =
+proc rotated2d*[T: GLVectorf2 | GLvectorf3](v: T, angle: GLfloat): T =
   ## Return a rotated copy of `v`.
   result = v
   result.rotate2d(angle)
 
-proc rotate2d*[T: GLVectorf2 | GLvectorf3](vecs: var openarray[T], angle: float) =
+proc rotate2d*[T: GLVectorf2 | GLvectorf3](vecs: var openarray[T], angle: GLfloat) =
   for i in 0 ..< vecs.len:
     vecs[i].rotate2d
 
-proc rotated2d*[T: openarray[GLVectorf2 | GLvectorf3]](vecs: T, angle: float): T =
+proc rotated2d*[T: openarray[GLVectorf2 | GLvectorf3]](vecs: T, angle: GLfloat): T =
   when result is seq:
     result.setLen vecs.len
   for i, v in vecs:
@@ -206,12 +210,20 @@ makeOps GLvectorf2
 makeOps GLvectorf3
 makeOps GLvectorf4
 
-func dot*(v1, v2: GLvector): float =
+func dot*(v1, v2: GLvector): GLfloat =
   ## Calculate the dot product of two vectors.
   assert v1.len == v2.len, "Vectors must be the same length"
   for i, v in v1:
     {.unroll.}
     result = result + v * v2[i]
+
+func cross*(v1, v2: GLvectorf3): GLvectorf3 =
+  ## Calculate the cross product of two vectors
+  [
+    v1.y * v2.z - v1.z * v2.y,
+    v1.z * v2.x - v1.x * v2.z,
+    v1.x * v2.y - v1.y * v2.x
+  ]
 
 func reflect*(incident, normal: GLvectorf2): GLvectorf2 =
   let d = 2.0 * dot(normal, incident)
@@ -318,7 +330,7 @@ proc triangleNormals*(vertices: openarray[GLvectorf3]): seq[GLvectorf3] =
 # Misc utils
 #-----------
 
-func constrain*(v: var GLVector, maxLength: float) =
+func constrain*(v: var GLVector, maxLength: SomeFloat) =
   ## Vector cannot go over maxLength but retains angle.
   let
     sLen = v.sqrLen
@@ -331,7 +343,7 @@ func constrain*(v: var GLVector, maxLength: float) =
     v.x = maxLength * nx
     v.y = maxLength * ny
 
-proc constrain*[T: GLVector](v: T, maxLength: float): T {.noInit.} =
+proc constrain*[T: GLVector](v: T, maxLength: SomeFloat): T {.noInit.} =
   result = v
   result.constrain(maxLength)
 
@@ -383,9 +395,183 @@ func taxiCabAngle*(x, y: float): float {.inline.} =
     else:
       3 + x / (x - y)
 
+
+# --------
+# Matrices
+# --------
+
+template mat4*(v: SomeInteger|SomeFloat): GLmatrixf4 = [
+  vec4(v.GLfloat, 0.0, 0.0, 0.0),
+  vec4(0.0, v.GLfloat, 0.0, 0.0),
+  vec4(0.0, 0.0, v.GLfloat, 0.0),
+  vec4(0.0, 0.0, 0.0, v.GLfloat)
+]
+
+template mat4*(a, b, c, d: GLvectorf4): GLmatrixf4 = [a, b, c, d]
+
+func identity*[N: static[int]]: array[N, array[N, GLfloat]] =
+  ## Example: `echo identity[3]()`.
+  for i in 0 ..< N:
+    {.unroll.}
+    result[i][i] = 1.0'f32
+
+proc `$`*[N: static[int]](m: array[N, array[N, GLfloat]]): string =
+  for r in m:
+    result &= $r & "\n"
+
+func `+`*(m1, m2: GLmatrixf4): GLmatrixf4 {.inline, noInit.} =
+  for r in 0 .. 3:
+    {.unroll.}
+    for c in 0 .. 3:
+      {.unroll.}
+      result[r][c] = m1[r][c] + m2[r][c]
+
+func `-`*(m1, m2: GLmatrixf4): GLmatrixf4 {.inline, noInit.} =
+  for r in 0 .. 3:
+    {.unroll.}
+    for c in 0 .. 3:
+      {.unroll.}
+      result[r][c] = m1[r][c] - m2[r][c]
+
+func `*`*[R, C, X: static[int]](
+    m: array[0 .. R, array[0 .. C, GLfloat]],
+    v: array[0 .. X, GLfloat]): array[0 .. X, GLfloat] {.inline, noInit.} =
+  ## Multiply two matrices.
+  ## 
+  ## The number of columns in `m1` must equal the number of rows in `m2`.
+  for r in 0 .. R:
+    {.unroll.}
+    for c1 in 0 .. X:
+      {.unroll.}
+      for c2 in 0 .. C:
+        {.unroll.}
+        result[c1] += m[r][c2] * v[c1]
+
+func `*`*[R, C, X: static[int]](
+    m1: array[R, array[C, GLfloat]],
+    m2: array[C, array[X, GLfloat]]): array[R, array[X, GLfloat]] {.inline, noInit.} =
+  ## Multiply two matrices.
+  ## 
+  ## The number of columns in `m1` must equal the number of rows in `m2`.
+  for r in 0 ..< R:
+    {.unroll.}
+    for c1 in 0 ..< C:
+      {.unroll.}
+      for c2 in 0 ..< X:
+        {.unroll.}
+        result[r][c1] += m1[r][c2] * m2[c2][c1]
+
+func scale*(m: GLmatrixf4, value: GLfloat): GLmatrixf4 {.inline, noInit.} =
+  result = m
+  for i in 0 .. 3:
+    result[i][i] *= value
+
+func scale*(m: var GLmatrixf4, value: GLfloat) {.inline, noInit.} =
+  for i in 0 .. 3:
+    m[i][i] *= value
+
+func translationMatrixC*(offset: GLvectorf3): GLmatrixf4 =
+  ## Return a column-major translation matrix.
+  [
+    [1'f32, 0, 0, offset[0]],
+    [0'f32, 1, 0, offset[1]],
+    [0'f32, 0, 1, offset[2]],
+    [0'f32, 0, 0, 1],
+  ]
+
+func translationMatrixR*(offset: GLvectorf3): GLmatrixf4 =
+  ## Return a row-major translation matrix.
+  [
+    [1'f32, 0, 0, 0],
+    [0'f32, 1, 0, 0],
+    [0'f32, 0, 1, 0],
+    [offset[0], offset[1], offset[2], 1],
+  ]
+
+template translate*(m: var GLmatrixf4, position: GLvectorf3) =
+  m[2][0] = position[0]
+  m[2][1] = position[1]
+  m[2][2] = position[2]
+
+template translate*(m: var GLmatrixf4, positionXY: GLvectorf2) =
+  m[2][0] = positionXY[0]
+  m[2][1] = positionXY[1]
+
+func rotateX*(m: var GLmatrixf4, angle: GLfloat) =
+  let
+    c = cos angle
+    s = sin angle
+  m[1][1] = c
+  m[1][2] = -s
+  m[2][1] = s
+  m[2][2] = c
+
+func rotateY*(m: var GLmatrixf4, angle: GLfloat) =
+  let
+    c = cos angle
+    s = sin angle
+  m[0][0] = c
+  m[0][2] = s
+  m[2][0] = -s
+  m[2][2] = c
+
+func rotateZ*(m: var GLmatrixf4, angle: GLfloat) =
+  let
+    c = cos angle
+    s = sin angle
+  m[0][0] = c
+  m[0][1] = -s
+  m[1][0] = s
+  m[1][1] = c
+
+func perspectiveMatrix*(fovY, aspect, zNear, zFar: GLfloat): GLmatrixf4 {.noInit.} =
+  ## Return a perspective matrix.
+  assert aspect != 0.0'f32
+  assert zFar != zNear
+  const
+    one = 1.0'f32
+    two = 2.0'f32
+  let
+    hTanFov = tan(fovY * 0.5).GLfloat
+    xScale = one / (aspect * hTanFov)
+    yScale = one / hTanFov
+    zDist = zFar - zNear
+
+  [
+    [xScale, 0, 0, 0],
+    [0'f32, yScale, 0, 0],
+    [0'f32, 0, -((zFar + zNear) / zDist), -((two * zFar * zNear) / zDist)],
+    [0'f32, 0, -one, 0.0]
+  ]  
+
+func viewMatrix*(eye, target: GLvectorf3, up = vec3(0.0, 1.0, 0.0)): GLmatrixf4 {.inline.} =
+  ## Return a view matrix to define world coordinates.
+  ## 
+  ## The default value for `up` defines a right-handed coordinate mapping.
+  var
+    zAxis = normal(target - eye)
+  let
+    xAxis = normal(cross(zAxis, up))
+    yAxis = cross(xAxis, zAxis)
+
+  zAxis = -zAxis
+
+  [
+    vec4(xAxis.x, xAxis.y, xAxis.z, -dot(xAxis, eye)),
+    vec4(yAxis.x, yAxis.y, yAxis.z, -dot(yAxis, eye)),
+    vec4(zAxis.x, zAxis.y, zAxis.z, -dot(zAxis, eye)),
+    vec4(0, 0, 0, 1)
+  ]
+
+template lookAt*(m: var GLmatrixf4, eye, target: GLvectorf3, up = vec3(0.0, 1.0, 0.0)) =
+  ## Alias for `viewMatrix`.
+  m = viewMatrix(eye, target, up)
+
+
 #-------------------------------
 # Line traversal / interpolation
 #-------------------------------
+
 
 template forLine*(x1, y1, x2, y2: float|GLfloat, steps: int, actions: untyped): untyped =
   ## Interpolate between two points in a line.
@@ -481,5 +667,27 @@ when isMainModule:
       check -a == [-25, -30, -35]
       check max([1, 4, 3], [3, 4, 5]) == [3, 4, 5]
       check min([1, 4, 3], [3, 4, 5]) == [1, 4, 3]
-
+    test "Matrices":
+      let
+        m1 = mat4(vec4(1, 2, 3, 4), vec4(5, 6, 7, 8), vec4(9, 10, 11, 12), vec4(13, 14, 15, 16))
+        m2 = mat4(vec4(2, 3, 4, 5), vec4(6, 7, 8, 9), vec4(10, 11, 12, 13), vec4(14, 15, 16, 17))
+      
+      check (m1 + m2) == mat4(
+        vec4(3, 5, 7, 9),
+        vec4(11, 13, 15, 17),
+        vec4(19, 21, 23, 25),
+        vec4(27, 29, 31, 33)
+      )
+      check (m1 - m2) == mat4(
+        vec4(-1, -1, -1, -1),
+        vec4(-1, -1, -1, -1),
+        vec4(-1, -1, -1, -1),
+        vec4(-1, -1, -1, -1),
+      )
+      check (m1 * m2) == mat4(
+        vec4(100, 110, 120, 130),
+        vec4(228, 254, 280, 306),
+        vec4(356, 398, 440, 482),
+        vec4(484, 542, 600, 658)
+      )
 

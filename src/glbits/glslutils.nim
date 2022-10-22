@@ -50,13 +50,13 @@ proc readAndInclude*(filePath: string, announce = true, includeStr = "//## inclu
     stream = newFileStream(filePath, fmRead)
     line: string
     res: string
+    hasIncludes: bool
 
   if not stream.isNil:
     while stream.readLine(line):
       let found = find(line, includeStr)
       if found > -1:
         var
-          toInclude: seq[string]
           lastPath: string
           bracketOpen: bool
           filePath: string
@@ -89,7 +89,9 @@ proc readAndInclude*(filePath: string, announce = true, includeStr = "//## inclu
             doAssert bracket2 < 0, "Found closing ']' with no opening '['"
             filePath = fileDir.joinPath(inclPath) & ext
           
-          if announce: echo "  Including: ", filePath
+          if announce:
+            hasIncludes = true
+            echo "  Including: ", filePath
           res &= readFile(filePath) & "\n"
 
         doAssert not bracketOpen, "Cannot find closing ']' in '" & line & "'"
@@ -99,7 +101,11 @@ proc readAndInclude*(filePath: string, announce = true, includeStr = "//## inclu
     stream.close()
   else:
     doAssert false, "GLSL include cannot find '" & filePath & "'"
-
+  
+  if announce and not(hasIncludes):
+    echo "  <None>"
+  
   if echoOutput:
     echo res
+  
   res

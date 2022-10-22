@@ -1,22 +1,24 @@
 import sdl2, sdl2/ttf, glbits/textures, opengl
 
-## Simple font renderer using texture billboards and sdl2.ttf.
+## Simple font renderer using instanced texture billboards and sdl2.ttf.
 
 type
   ## Renders a font to a texture.
   TextCache* = object
     texBB: TexBillboard
     texBBPosition: GLvectorf3
-    texBBScale: GLvectorf2
+    texBBScale, texSize: GLvectorf2
     texBBAngle: float
     texBBColour: GLvectorf4
     font*: FontPtr
     fontText: string
+    needsRender: bool
     fontAngle: float
-    texture: TexturePtr
-    fontWidth: cint
-    fontHeight: cint
-    fontOutline: cint
+    fontOutline*: cint
+    resolution*: GLvectorf2
+
+
+func customScale(tc: TextCache): bool = tc.texBBScale != [0.0'f32, 0.0'f32]
 
 
 proc updateTexBB*(tc: var TextCache) =
@@ -25,30 +27,30 @@ proc updateTexBB*(tc: var TextCache) =
     curItem.positionData = [tc.texBBPosition[0], tc.texBBPosition[1], tc.texBBPosition[2], 1.0]
     curItem.colour = tc.texBBColour
     curItem.rotation[0] = tc.fontAngle
-    curItem.scale = tc.texBBScale
+    if tc.customScale:
+      curItem.scale = tc.texBBScale
+    else:
+      curItem.scale = tc.texSize
 
-
-proc `uniformScale=`*(tc: var TextCache, scale: float) = tc.texBBScale = [scale.GLfloat, scale]
 
 from math import cos, sin, round
 
 
 proc initTextCache*(): TextCache =
   result.texBB = newTexBillboard()
-  result.uniformScale = 1.0
   result.texBBColour = [1.0.GLfloat, 1.0, 1.0, 1.0]
   result.texBB.rotMat[0] = cos(0.0)
   result.texBB.rotMat[1] = sin(0.0)
   result.updateTexBB
+  result.needsRender = true
 
 
-proc deallocate*(tc: TextCache) =
-  if tc.texture != nil:
-    tc.texture.destroy
+proc freeTexture*(tc: var TextCache) =
+  tc.texBB.freeTexture
 
 
 proc toSDLColour*(glColour: GLvectorf4): Color =
-  # sdl colour cannot exceed 255
+  # SDL colour cannot exceed 255.
   result.r = (255.0 * clamp(glColour[0], 0.0, 1.0)).round.uint8
   result.g = (255.0 * clamp(glColour[1], 0.0, 1.0)).round.uint8
   result.b = (255.0 * clamp(glColour[2], 0.0, 1.0)).round.uint8
@@ -57,7 +59,7 @@ proc toSDLColour*(glColour: GLvectorf4): Color =
 
 template doLocked(surface: SurfacePtr, actions: untyped): untyped =
   if SDL_MUSTLOCK(surface):
-    # Lock the surface
+    # Lock the surface.
     if surface.lockSurface() == 0:
       actions
       surface.unlockSurface()
@@ -67,54 +69,69 @@ template doLocked(surface: SurfacePtr, actions: untyped): untyped =
   else:
     actions
 
-
 proc renderFont*(tc: var TextCache) =
   ## Renders the font to the texture cache.
   
-  assert tc.font != nil, "Font is not initialised"
+  assert not tc.font.isNil, "Font is not initialised"
+  tc.font.setFontOutline(tc.fontOutline)
+  tc.needsRender = false
+  
   let
     col = toSDLColour(tc.texBBColour)
-
-  tc.font.setFontOutline(tc.fontOutline)
+    text =
+      # An empty string won't create a surface to upload so a space is used.
+      if tc.fontText.len == 0: " ".cstring
+      else: tc.fontText.cstring
   
-  var
-    surface = tc.font.renderUtf8Blended(tc.fontText.cstring, col)
-  
+  var surface = renderUtf8Blended(tc.font, text, col)
   if surface.isNil:
-    echo "Could not render text surface"
-    quit(1)
+    assert false, "Could not render font text to surface"
+    return
   
   discard surface.setSurfaceAlphaMod(col.a)
+  var newTex: SDLTexture # note: not initialised, used for casting.
   
-  # TODO: Give option to update the model so that text extends rather than squishes
+  let
+    textureSize =
+      if not tc.customScale:
+        assert tc.resolution[0] > 0'f32 and tc.resolution[1] > 0'f32,
+          "Provide non-zero dimensions to 'resolution' or use 'setFixedScale' to render a TextCache"
+        [surface.w.float32 / tc.resolution[0], surface.h.float32 / tc.resolution[1]]
+      else:
+        tc.texBBScale
 
-  var
-    newTex: SDLTexture # note: not initialised
-  
+  if textureSize[0] == 0.0:
+    quit $textureSize
+
   surface.doLocked:
+    # Reflect the font texture pixels on the Y axis.
     newTex.data = cast[SimpleSDLTextureArrayPtr](surface.pixels)
     newTex.width = surface.w
-    tc.fontWidth = surface.w
     newTex.height = surface.h
-    tc.fontHeight = surface.h
     newTex.reverseY
-    tc.texBB.updateTexture(surface.pixels, surface.w , surface.h, sdlTexture = true, freeOld = false)
-  
-  tc.updateTexBB
+
+    # Note: the texture memory is freed after upload.
+    tc.texBB.updateTexture(surface.pixels, surface.w, surface.h, sdlTexture = true, freeOld = false)
+    tc.texSize = textureSize
+    tc.updateTexBB
+
   freeSurface(surface)
+  tc.texBB.texture.data = nil
 
 
-proc staticLoadFont*(filename: static[string]): FontPtr =
-  ## filename must be available at compile-time.
+func renderedSize*(tc: TextCache): GLvectorf2 = tc.texSize
+
+
+proc staticLoadFont*(filename: static[string], pointSize = 24.cint): FontPtr =
+  ## File must be available at compile-time.
 
   template staticReadRW(filename: string): ptr RWops =
     const file = staticRead(filename)
     rwFromConstMem(file.cstring, file.len)
 
-  result = openFontRW(staticReadRW(filename), freeSrc = 1, 24)
+  result = openFontRW(staticReadRW(filename), freeSrc = 1, pointSize)
   if result == nil:
-    echo "ERROR: Failed to load font"
-    echo getError()
+    echo "Error: Failed to load font: ", getError()
 
 
 proc col*(tc: TextCache): GLvectorf4 = tc.texBBColour
@@ -123,7 +140,6 @@ proc col*(tc: TextCache): GLvectorf4 = tc.texBBColour
 proc `col=`*(tc: var TextCache, col: GLvectorf4) =
   if tc.texBBColour != col:
     tc.texBBColour = col
-    tc.updateTexBB
 
 
 proc `offset=`*(tc: var TextCache, offset: GLvectorf2) =
@@ -136,7 +152,6 @@ proc position*(tc: TextCache): GLvectorf3 = tc.texBBPosition
 proc `position=`*(tc: var TextCache, pos: GLvectorf3) =
   if tc.texBBPosition != pos:
     tc.texBBPosition = pos
-    tc.updateTexBB
 
 
 proc `position=`*(tc: var TextCache, pos: GLvectorf2) =
@@ -144,22 +159,19 @@ proc `position=`*(tc: var TextCache, pos: GLvectorf2) =
   if tc.texBBPosition[0] != pos[0] or tc.texBBPosition[1] != pos[1]:
     tc.texBBPosition[0] = pos[0]
     tc.texBBPosition[1] = pos[1]
-    tc.updateTexBB
 
 
 proc setZ*(tc: var TextCache, zPos: float) =
   if tc.texBBPosition[2] != zPos:
     tc.texBBPosition[2] = zPos
-    tc.updateTexBB
 
 
-proc scale*(tc: TextCache): GLvectorf2 = tc.texBBScale
+proc fixedScale*(tc: TextCache): GLvectorf2 = tc.texBBScale
 
 
-proc `scale=`*(tc: var TextCache, scale: GLvectorf2) =
+proc setFixedSize*(tc: var TextCache, scale: GLvectorf2) =
   if tc.texBBScale != scale:
     tc.texBBScale = scale
-    tc.updateTexBB
 
 
 proc globalRotation*(tc: TextCache): GLvectorf2 =
@@ -182,51 +194,36 @@ proc `fontAngle=`*(tc: var TextCache, angle: float) =
   tc.fontAngle = angle
 
 
-proc width*(tc: TextCache): cint = tc.fontWidth
-
-
-proc height*(tc: TextCache): cint = tc.fontHeight
-
-
-proc normalisedFontSize*(tc: TextCache, screenRes: GLvectorf2): GLVectorf2 {.inline.} =
-  # calculate from screenRes and fontSize to give axis' of (0..1)
-  # we divide screen res by 2 because GL screens are between -1.0..1.0
-  result[0] = tc.fontWidth.float / (screenRes[0] * 2)
-  result[1] = tc.fontHeight.float / (screenRes[1] * 2)
-
-
-proc `size=`*(tc: var TextCache, size: tuple[w: cint, h: cint]) =
-  if tc.fontWidth != size.w or tc.fontHeight != size.h:
-    tc.fontWidth = size.w
-    tc.fontHeight = size.h
-    if tc.fontText != "":
-      tc.renderFont
-
-
-proc updateText*(tc: var TextCache, textStr: string) =
-  if textStr != tc.fontText:
-    tc.fontText = textStr
-    tc.renderFont
-
-
-proc updateText*(tc: var TextCache, textStr: string, x, y: GLfloat) =
-  tc.position = [x, y]
-  tc.updateText(textStr)
-
-
-proc updateText*(tc: var TextCache, textStr: string, x, y: GLfloat, scale: GLvectorf2) =
-  tc.position = [x, y]
-  tc.scale = scale
-  tc.updateText(textStr)
+proc size*(tc: TextCache): GLvectorf2 = tc.texSize
 
 
 proc text*(tc: TextCache): string = tc.fontText
 
 
 proc `text=`*(tc: var TextCache, text: string) =
-  tc.updateText(text)
+  if text != tc.fontText:
+    tc.fontText = text
+    tc.needsRender = true
+
+
+proc renderText*(tc: var TextCache, force = false) =
+  if force or tc.needsRender:
+    tc.renderFont
+
+
+proc update*(tc: var TextCache, textStr: string, x, y: GLfloat, force = false) =
+  tc.text = textStr
+  tc.position = [x, y]
+  tc.renderText(force)
+
+
+proc update*(tc: var TextCache, textStr: string, x, y: GLfloat, fixedScale: GLvectorf2, force = false) =
+  tc.setFixedSize fixedScale
+  tc.update(textStr, x, y, force)
 
 
 proc render*(tc: var TextCache) =
+  if tc.needsRender:
+    tc.renderText
   tc.updateTexBB
   tc.texBB.render

@@ -71,10 +71,9 @@ proc initFrameBuffer*(fb: var FrameBuffer, width, height: int, bufferTypes: open
   if status != GL_FRAMEBUFFER_COMPLETE_EXT:
     raise newException(ValueError, "Frame buffer is not complete! Status: " & $status.int)
 
-template bindFrameBuffer*(fb: FrameBuffer): untyped =
+proc bindFrameBuffer*(fb: var FrameBuffer) =
   glBindFramebuffer(GL_FRAMEBUFFER, fb.frameBufferId)
   debugMsg &"Bound to frame [buffer {fb.frameBufferId}]"
-  mixin toString
   # set number of output buffers
   when defined(debugGL):
     let

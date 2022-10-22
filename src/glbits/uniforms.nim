@@ -32,6 +32,8 @@ template setUInt2*(uniform: Uniform, value1, value2: GLuint): untyped = uniform.
 template setUInt3*(uniform: Uniform, value1, value2, value3: GLuint): untyped = uniform.GLint.glUniform3ui value1, value2, value3
 template setUInt4*(uniform: Uniform, value1, value2, value3, value4: GLuint): untyped = uniform.GLint.glUniform4ui value1, value2, value3, value4
 
+template setMat4*(uniform: Uniform, value: GLmatrixf4) = uniform.GLint.glUniformMatrix4fv 1, GL_FALSE, value[0][0].addr
+
 proc setFloat1*(uniform: Uniform, value: GLFloat) =
   uniform.GLint.glUniform1f value
   debugMsg &"Set [uniform {uniform.int}] to {value}"
