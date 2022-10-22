@@ -54,7 +54,7 @@ type
     fullScreen*: bool
     changed*: bool
 
-  SDLMouseChangeKind* = enum mcPosition, mcButtonUp, mcButtonDown
+  SDLMouseChangeKind* = enum mcPosition, mcButton, mcButtonUp, mcButtonDown, mcWheel, mcWheelInc, mcWheelDec
   SDLMousePosDiff* = object
     sx*, sy*: cint
     gl*: GLvectorf2
@@ -63,6 +63,7 @@ type
     kinds*: set[SDLMouseChangeKind]
     pos*: SDLMousePosDiff
     buttons*: tuple[down, up: SDLButtons]
+    wheel*: MouseWheelEventObj
 
   SDLMousePos* = object
     sx*, sy*: cint
@@ -177,7 +178,6 @@ template pollEvents*(events, actions: untyped) =
   ## 
   ##  2) The display resize event: updates the `sdlDisplay` variable created
   ##    by `initSdlOpenGl`:
-  ##    - `sdlDisplay.aspectRatio` is recalculated.
   ##    - `sdlDisplay.fullScreen` is `true` when the display width and height match `sdlDisplay.res`.
   ##    - `sdlDisplay.changed` is `true` during an iteration where an update has occurred.
   ##    - Invokes `glViewPort` with the new dimensions.
@@ -253,16 +253,27 @@ template pollEvents*(events, actions: untyped) =
 
           of MouseButtonDown:
             var mb = evMouseButton(event)
+            mouseInfo.changes.kinds.incl mcButton
             mouseInfo.changes.kinds.incl mcButtonDown
             mouseInfo.changes.buttons.down.incl mb.button
             mouseInfo.buttons.incl mb.button
           
           of MouseButtonUp:
             var mb = evMouseButton(event)
+            mouseInfo.changes.kinds.incl mcButton
             mouseInfo.changes.kinds.incl mcButtonUp
             mouseInfo.changes.buttons.up.incl mb.button
             mouseInfo.buttons.excl mb.button
 
+          of MouseWheel:
+            mouseInfo.changes.wheel = evMouseWheel(event)[]
+            mouseInfo.changes.kinds.incl mcWheel
+            if mouseInfo.changes.wheel.y >= 0:
+              mouseInfo.changes.kinds.incl mcWheelInc
+            else:
+              # SDL_MOUSEWHEEL_FLIPPED:
+              mouseInfo.changes.kinds.incl mcWheelDec
+          
           else:
             # User events.
             events
@@ -290,36 +301,3 @@ template doubleBuffer*(actions: untyped) =
   glFlush()
   sdlWindow.glSwapWindow()
 
-
-when isMainModule:
-  import sdl2, opengl
-
-  initSdlOpenGl()
-  echo "Display settings: ", sdlDisplay
-
-  pollEvents:
-
-    # Process events that aren't quit, resize, or mouse motion.
-    echo "Event received :", event
-
-  do:
-    # Code here is run every loop.
-
-    if keyStates.pressed(SDL_SCANCODE_SPACE):
-      echo "Space bar is pressed"
-
-    if mouseInfo.changed:
-      echo "New mouse info ", mouseInfo
-    
-    if sdlDisplay.changed:
-      echo "Resized: ", sdlDisplay
-    
-    if not running:
-      echo "Received a quit event"
-
-    doubleBuffer:
-      # Rendering run here will draw to a freshly cleared back buffer
-      # that is swapped to the display when the block finishes.
-      #
-      # This helps to avoid visual artifacts from half rendered scenes.
-      discard
