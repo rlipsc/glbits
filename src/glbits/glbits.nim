@@ -78,8 +78,10 @@ type
     lengths*: seq[GLsizei]
     messages*: seq[string]
 
+
 template glBool*(v: bool): GLBoolean = 
   if v == true: GL_TRUE else: GL_FALSE
+
 
 proc `$`*(bufferTarget: BufferTarget): string =
   assert bufferTarget in BufferTarget.low .. BufferTarget.high, "bufferTarget is invalid: " & $bufferTarget.ord
@@ -99,28 +101,38 @@ proc `$`*(bufferTarget: BufferTarget): string =
   of btQueryResultBuffer: "GL_QUERY_BUFFER"
   of btAtomicCounterStorage: "GL_ATOMIC_COUNTER_BUFFER"
 
+
 #------------
 # VBO Support
 #------------
+
 
 proc bindBuffer*(buffer: VertexBufferObject, target: BufferTarget) {.inline.} =
   ## Use this buffer as this target
   glBindBuffer(target.GLenum, buffer.id)
   debugMsg &"Bound [buffer {buffer.id}] as {target}"
 
+
 proc bindBuffer*(buffer: VertexBufferObject) {.inline.} =
   ## Use this buffer
   glBindBuffer(buffer.target.GLenum, buffer.id)
   debugMsg &"Bound [buffer {buffer.id}] using buffer's default target of {buffer.target}"
 
-## Return the number of GLfloats that the dataUnitSize represents.
-template toInt(dataUnitSize: GLFloatCount): Natural = dataUnitSize.ord + 1
-## Calculate how mang GLfloats are in the buffer.
-template floatCount*(vbo: VertexBufferObject): Natural = vbo.dataLen * vbo.dataUnitSize.toInt
+
+template toInt(dataUnitSize: GLFloatCount): Natural =
+  ## Return the number of GLfloats that the dataUnitSize represents.
+  dataUnitSize.ord + 1
+
+
+template floatCount*(vbo: VertexBufferObject): Natural =
+  ## Calculate how mang GLfloats are in the buffer.
+  vbo.dataLen * vbo.dataUnitSize.toInt
+
 
 proc byteCount*(vbo: VertexBufferObject): Natural =
   ## Calculate the number of bytes this buffer contains.
   vbo.floatCount * sizeOf(GLFloat)
+
 
 template asArray*(vbo: VertexBufferObject, N: static[int], actions: untyped) =
   ## Access the VBO's `rawData` as an array specified by `dataUnitSize`.
@@ -128,7 +140,9 @@ template asArray*(vbo: VertexBufferObject, N: static[int], actions: untyped) =
     let bufferArray {.inject.} = cast[VertexBufferData[N]](vbo.rawData)
     actions
 
+
 template toArray*(vbo: VertexBufferObject, N: static[int]): auto = cast[VertexBufferData[N]](vbo.rawData)
+
 
 proc addData*[N: static[int]](vbo: VertexBufferObject, data: openarray[array[N, GLfloat]]) =
   vbo.asArray(N):
@@ -136,9 +150,19 @@ proc addData*[N: static[int]](vbo: VertexBufferObject, data: openarray[array[N, 
       for di, item in data[i]:
         bufferArray[i][di] = item
 
+
 proc setData*[N: static[int]](vbo: VertexBufferObject, index: Natural, data: array[N, GLfloat]) =
-  vbo.asArray:
+  vbo.asArray(N):
     bufferArray[index] = item
+
+
+proc getData*(vbo: VertexBufferObject, N: static[int]): seq[array[N, GLfloat]] =
+  ## Return a copy of the data in the buffer object.
+  result.setLen vbo.dataLen
+  vbo.asArray(N):
+    for i in 0 ..< vbo.dataLen:
+      result[i] = bufferArray[i]
+
 
 proc allocate*(vbo: var VertexBufferObject, size: Natural, itemSize: GLFloatCount) =
   ## Allocate memory for data buffer by number of float32s.
@@ -149,6 +173,7 @@ proc allocate*(vbo: var VertexBufferObject, size: Natural, itemSize: GLFloatCoun
   if size > 0: vbo.rawData = alloc0(vbo.byteCount)
   debugMsg &"Allocated {size} bytes for [buffer {vbo.id}]"
 
+
 proc deallocate*(vbo: var VertexBufferObject) =
   ## Deallocate memory from the buffer.
   if vbo.rawData != nil:
@@ -158,6 +183,7 @@ proc deallocate*(vbo: var VertexBufferObject) =
   else:
     debugMsg &"Asked to deallocate [buffer {vbo.id}] but it is already nil"
 
+
 proc init*(vbo: var VertexBufferObject, index: GLuint, bufferTarget = btVertexAttributes) =
   vbo.initialised = true
   vbo.changed = true
@@ -166,15 +192,18 @@ proc init*(vbo: var VertexBufferObject, index: GLuint, bufferTarget = btVertexAt
   glGenBuffers(1, addr vbo.id)
   debugMsg &"Created new [buffer {vbo.id}]"
 
+
 proc init*(vbo: var VertexBufferObject, index: GLuint, size: Natural, itemSize: GLFloatCount, target = btVertexAttributes) =
   ## Create a new vertex buffer object.
   vbo.init(index, target)
   vbo.allocate(size, itemSize)
   debugMsg &"Created new [buffer {vbo.id}]"
 
+
 proc initVBO*(index: GLuint, size: Natural, itemSize: GLFloatCount): VertexBufferObject =
   ## Create a new vertex buffer object.
   result.init(index, size, itemSize)
+
 
 proc initVBO*[N: static[int]](index: GLuint, data: openarray[array[0..N, GLfloat]]): VertexBufferObject =
   ## Create a new vertex buffer object set up from `data`.
@@ -189,12 +218,14 @@ proc initVBO*[N: static[int]](index: GLuint, data: openarray[array[0..N, GLfloat
         "float count " & $N
     debugMsg &"Added {data.len} items of {ty} to [buffer {result.id}]"
 
+
 proc freeVBO*(vbo: var VertexBufferObject, disableVAA = false) =
   if disableVAA: glDisableVertexAttribArray(vbo.id)
   var buffId = vbo.id
   glDeleteBuffers(1, addr buffId)
   vbo.deallocate
   debugMsg &"Freed [buffer {vbo.id}]"
+
 
 proc upload*(vbo: var VertexBufferObject) =
   ## Creates an opengl data store with current data,
@@ -207,6 +238,7 @@ proc upload*(vbo: var VertexBufferObject) =
   vbo.resize = false
   debugMsg &"Uploaded {vbo.byteCount} bytes to array [buffer {vbo.id}]"
 
+
 proc upload*(vbo: var VertexBufferObject, target: BufferTarget) =
   ## Creates an opengl data store with current data,
   ## use `updateGPU` to update data, which doesn't need to
@@ -217,6 +249,7 @@ proc upload*(vbo: var VertexBufferObject, target: BufferTarget) =
   # it is safe to deallocate the raw pointer after copying the data to GPU.
   vbo.resize = false
   debugMsg &"Uploaded {vbo.byteCount} bytes to array [buffer {vbo.id}]"
+
 
 proc updateGPU*(vbo: var VertexBufferObject, itemCount: int) =
   ## Change VBO data on GPU. Faster than creating a new datastore with `upload`,
@@ -231,6 +264,7 @@ proc updateGPU*(vbo: var VertexBufferObject, itemCount: int) =
     glBufferSubData(vbo.target.GLenum, 0, bytes, vbo.rawData)
     debugMsg &"Updated {vbo.id} with {bytes} bytes"
 
+
 proc updateGPU*(vbo: var VertexBufferObject) =
   ## Send everything in this buffer to the GPU without creating a new datastore.
   if vbo.resize:
@@ -238,11 +272,13 @@ proc updateGPU*(vbo: var VertexBufferObject) =
   else:
     vbo.updateGPU(vbo.dataLen)
 
+
 proc render*(vbo: VertexBufferObject, instances: int, vertexMode = GL_TRIANGLES) =
   ## Draw multiple instances of a range of elements.
   vbo.bindBuffer
   debugMsg &"Drawing models using VBO {vbo.id} with {instances} instances and float count {vbo.floatCount}"
   glDrawArraysInstanced(vertexMode, 0.GLint, vbo.floatCount.GLsizei, instances.GLsizei)
+
 
 proc `$`*(buffer: VertexBufferObject): string =
   result = &"[ID: {buffer.id.int}, Index: {buffer.index}, Target: {buffer.target}, DataUnitSize = {buffer.dataUnitSize}, "
@@ -274,36 +310,45 @@ proc `$`*(buffer: VertexBufferObject): string =
 # Attributes support
 #-------------------
 
+
 proc setInfo*(index: Attribute, size, stride, offset: int, glType = cGL_FLOAt, normalised = false) =
   glVertexAttribPointer(index.GLuint, size.GLint, glType, glBool(normalised), stride.GLsizei, cast[pointer](offset))                                   # position
   debugMsg &"Set info: index {index.int} size: {size} stride: {stride} offset: {offset} type: {glType.int} normalised: {normalised}"
+
 
 proc perInstance*(attribute: Attribute) =
   glVertexAttribDivisor(attribute.GLuint, 1)
   debugMsg &"Set attribute {attribute.int} to per instance"
 
+
 proc perVertex*(attribute: Attribute) =
   glVertexAttribDivisor(attribute.GLuint, 0)
   debugMsg &"Set attribute {attribute.int} to per vertex"
+
 
 template enableAttributes*(v: HSlice[system.int, system.int]): untyped =
   for i in v:
     glEnableVertexAttribArray(i.GLuint)
 
+
 #----------------------------
 # Vertex array object support
 #----------------------------
+
 
 proc bindArray*(varray: VertexArrayObject) =
   glBindVertexArray(varray.id)
   debugMsg &"Binding array {varray.id}"
 
+
 proc initVAO*(vao: var VertexArrayObject) =
   glGenVertexArrays(1, addr vao.id)
   debugMsg &"Create array {vao.id}"
 
+
 proc initVAO*: VertexArrayObject =
   result.initVao
+
 
 proc add*(varray: var VertexArrayObject, vbo: var VertexBufferObject) =
   varray.bindArray
@@ -325,12 +370,14 @@ proc add*(varray: var VertexArrayObject, vbo: var VertexBufferObject) =
   # Create the opengl data store, this allocates memory on the GPU.
   vbo.upload
 
+
 proc initVAO*(setup: openarray[tuple[index: GLuint, maxItems: Natural, floatCount: GLFloatCount, divisor: BufferDivisor]]): VertexArrayObject =
   result = initVAO()
   for item in setup:
     var vbo = initVBO(item.index, item.maxItems, item.floatCount)
     vbo.divisor = item.divisor
     result.add vbo
+
 
 proc uploadChanges*(vao: var VertexArrayObject, instanceCount: Natural) =
   for i in 0 ..< vao.buffers.len:
@@ -344,15 +391,18 @@ proc uploadChanges*(vao: var VertexArrayObject, instanceCount: Natural) =
         #vao.buffers[i].dataLen = model.renderCount * model.varray.buffers[i].dataSize #info.floatCount * group.entities.len
         vao.buffers[i].updateGPU(instanceCount)
 
+
 proc `$`*(varray: VertexArrayObject): string =
   result = "Vertex Array Object " & $varray.id & " <\n"
   for i in 0 ..< varray.buffers.len:
     result &= $varray.buffers[i] & "\n"
   result &= ">"
 
+
 #---------------
 # Shader support
 #---------------
+
 
 proc logShader*(shaderId: GLuint) =
   var length: GLint = 0
@@ -364,11 +414,13 @@ proc logShader*(shaderId: GLuint) =
   echo "Shader log: ", str
   log.deAlloc
 
+
 proc log*(shader: Shader): string =
   var maxLen: GLint
   glGetShaderiv(shader.id, GL_INFO_LOG_LENGTH, maxLen.addr)
   result = newString(maxLen.int)
   glGetShaderInfoLog(shader.id, maxLen, nil, result.cstring)
+
 
 proc newShader*(shader: var Shader, vertexType: GLenum, source: string) =
   shader.glsl = source
@@ -391,20 +443,25 @@ proc newShader*(shader: var Shader, vertexType: GLenum, source: string) =
     deallocCStringArray(strArr)
   debugMsg &"Created new shader {shader.id}"
 
+
 proc newShader*(vertexType: GLenum, source: string): Shader =
   result.newShader(vertexType, source)
+
 
 proc delete*(shader: Shader) =
   glDeleteShader(shader.id)
   debugMsg &"Deleting shader {shader.id}"
 
+
 proc detach*(program: GLuint, shaderId: GLuint) =
   glDetachShader(program, shaderId)
   debugMsg &"Detaching shader {shaderId}"
 
+
 #----------------
 # Program support
 #----------------
+
 
 proc newShaderProgram*(sp: var ShaderProgram, vertexMode = GL_TRIANGLES) =
   ## Create a shader program.
@@ -413,8 +470,10 @@ proc newShaderProgram*(sp: var ShaderProgram, vertexMode = GL_TRIANGLES) =
   sp.vertexMode = vertexMode
   debugMsg &"New shader program {sp.id.int}"
 
+
 proc newShaderProgram*(vertexMode = GL_TRIANGLES): ShaderProgram =
   result.newShaderProgram(vertexMode)
+
 
 proc attach*(program: var ShaderProgram, shader: Shader) =
   ## Attach a shader to the program.
@@ -425,11 +484,13 @@ proc attach*(program: var ShaderProgram, shader: Shader) =
   program.linkedShaders.add(shader)
   debugMsg &"Attaching shader {shader.id} to program {program.id}"
 
+
 proc isLinked*(program: ShaderProgram): bool =
   ## Returns true when the program is successfully linked.
   var isLinked: GLint
   glGetProgramiv(program.id, GL_LINK_STATUS, addr isLinked)
   result = isLinked.bool != GL_FALSE
+
 
 proc log*(program: ShaderProgram): string =
   ## Return any error messages for this program.
@@ -439,11 +500,14 @@ proc log*(program: ShaderProgram): string =
   result = newString(maxLen.int)
   glGetProgramInfoLog(program.id, maxLen, addr maxLen, result.cstring)
 
+
 proc `$`*(shaderInput: ShaderInputItem): string =
   "(name: " & shaderInput.name & ", id: " & $shaderInput.id.int & ", type: " & shaderInput.glType.glTypeToStr & ", size: " & $shaderInput.size.int & ")"
 
+
 proc `$`*(shaderInputs: seq[ShaderInputItem]): string =
   for shaderInput in shaderInputs: result &= $shaderInput & "\n"
+
 
 proc getAttributes*(programId: GLuint): ShaderAttributes =
   ## Return a list of information about the attributes in this program.
@@ -469,6 +533,7 @@ proc getAttributes*(programId: GLuint): ShaderAttributes =
         id: loc.Attribute,
         glType: itemType
       )
+
 
 proc getUniforms*(programId: GLuint): ShaderUniforms =
   ## Return a list of information about the uniforms in this program.
@@ -516,18 +581,22 @@ proc link*(program: var ShaderProgram) =
   program.attributes = program.id.getAttributes()
   program.uniforms = program.id.getUniforms()
 
+
 proc getCurrentProgram*: GLint =
   glGetIntegerv(GL_CURRENT_PROGRAM, result.addr)
+
 
 proc name*(program: ShaderProgram, attribute: Attribute): string =
   for a in program.attributes.values:
     if a.id.int == attribute.int:
       return a.name
 
+
 proc name*(program: ShaderProgram, uniform: Uniform): string =
   for u in program.uniforms.values:
     if u.id.int == uniform.int:
       return u.name
+
 
 proc newShaderProgram*(program: var ShaderProgram, vertexGLSL, fragmentGLSL: string, vertexMode = GL_TRIANGLES) =
   ## Create a new shader program id.
@@ -537,32 +606,39 @@ proc newShaderProgram*(program: var ShaderProgram, vertexGLSL, fragmentGLSL: str
   program.attach newShader(GL_FRAGMENT_SHADER, fragmentGLSL)
   program.link
 
+
 proc newShaderProgram*(vertexGLSL, fragmentGLSL: string, vertexMode = GL_TRIANGLES): ShaderProgram =
   result.newShaderProgram(vertexGLSL, fragmentGLSL, vertexMode)
+
 
 proc detach*(program: var ShaderProgram) =
   for shader in program.linkedShaders:
     program.id.detach shader.id
   program.linkedShaders.setLen(0)
 
+
 proc delete*(program: var ShaderProgram) =
   program.detach
   glDeleteProgram(program.id)
   debugMsg &"Deleted program {program.id}"
+
 
 proc activate*(program: ShaderProgram) =
   ## Select this program to use.
   glUseProgram(program.id)
   debugMsg &"Activating program {program.id}"
 
+
 proc bindAttribute*(program: ShaderProgram, location: Natural, attribute: string) =
   ## Select this attribute location.
   glBindAttribLocation(program.id, location.GLuint, attribute)
   debugMsg &"Binding attribute {location.int} in program {program.id}"
 
+
 template withProgram*(program: ShaderProgram, actions: untyped): untyped =
   program.activate
   actions
+
 
 #------------------------------------------------------
 # ShaderProgramId, a distinct id representing a program
@@ -570,26 +646,33 @@ template withProgram*(program: ShaderProgram, actions: untyped): untyped =
 # to avoid passing around the shader data.
 #------------------------------------------------------
 
+
 var programs*: seq[ShaderProgram]
+
 
 proc newShaderProgramId*(vertexGLSL, fragmentGLSL: string, vertexMode = GL_TRIANGLES): ShaderProgramId =
   programs.add newShaderProgram(vertexGLSL, fragmentGLSL, vertexMode)
   result = programs.high.ShaderProgramId
 
+
 proc newShaderProgramId*(vertexMode = GL_TRIANGLES): ShaderProgramId =
   programs.add newShaderProgram(vertexMode)
   result = programs.high.ShaderProgramId
 
+
 template program*(id: ShaderProgramId): ShaderProgram = programs[id.int]
 proc id*(programId: ShaderProgramId): GLuint = programs[programId.int].id
+
 
 proc activate*(program: ShaderProgramId) =
   ## Select this program to use.
   programs[program.int].activate
 
+
 proc attach*(programId: ShaderProgramId, shader: Shader) = programId.program.attach shader
 proc link*(programId: ShaderProgramId) = programId.program.link
 proc delete*(programId: ShaderProgramId) = programId.program.delete
+
 
 proc name*(attribute: Attribute): string =
   let curProg = getCurrentProgram()
@@ -598,6 +681,7 @@ proc name*(attribute: Attribute): string =
       return programs[i].name(attribute)
   $attribute.int
 
+
 proc name*(uniform: Uniform): string =
   let curProg = getCurrentProgram()
   for i in 0 ..< programs.len:
@@ -605,37 +689,51 @@ proc name*(uniform: Uniform): string =
       return programs[i].name(uniform)
   $uniform.int
 
+
 template renderWith*(programId: ShaderProgramId, vao: VertexArrayObject, modelBufIdx: Natural, instances: int, frameBuffId: GLuint, setupActions: untyped) =
   if frameBuffId > 0.GLuint:
     debugMsg "Binding [frame buffer " & $frameBuffId & "]"
     glBindFramebuffer(GL_FRAMEBUFFER, frameBuffId)
   glEnableClientState(GL_VERTEX_ARRAY)
-
-  template modelBuf: untyped = vao.buffers[VertexBufferIndex]
-
-  programId.activate
   
-  setupActions
+  template modelBuf: untyped = vao.buffers[modelBufIdx]
+  programId.activate
   
   vao.bindArray
   modelBuf.bindBuffer
 
+  setupActions
+  
   debugMsg "Drawing " & $instances & " models of " & $modelBuf.dataLen.int & " vertices"
   glDrawArraysInstanced(programId.program.vertexMode, 0, modelBuf.dataLen.GLsizei, instances.GLsizei)
+
 
 #-----
 # Misc
 #-----
 
+
 proc isShader*(id: GLuint): bool = glIsShader(id)
 proc isProgram*(id: GLuint): bool = glIsProgram(id)
+
 
 proc setColourAttachments*(values: var seq[GLuint]) =
   ## Can be used outside of program attachments.
   glDrawBuffers(values.len.GLSizei, cast[ptr GLenum](values[0].addr))
   debugMsg &"Set colour attachments to {values}"
 
+proc setAttachments*(colAttachments: openArray[GLuint]) =
+  ## Set colour attachments for the current framebuffer.
+  ## This is a convenience wrapper for setColourAttachments that
+  ## doesn't need a `var` parameter.
+  var ca = newSeq[GLuint](colAttachments.len)
+  for i, v in colAttachments:
+    ca[i] = v.GLuint
+  glDrawBuffers(ca.len.GLSizei, cast[ptr GLenum](ca[0].addr))
+
+
 proc getAttributeLocation*(program: ShaderProgram, attrib: string): Attribute = glGetAttribLocation(program.id, attrib).Attribute
+
 
 proc getLogMessages*(messageCount: Natural): GLLogMessages =
   ## Returns debugging messages when GL_DEBUG is active.
@@ -678,6 +776,7 @@ proc getLogMessages*(messageCount: Natural): GLLogMessages =
     copyMem dest, source, msgLen - 1
     curPos += msgLen
 
+
 proc glTypeToStr*(glType: GLenum): string =
   case glType
   of cGL_FLOAT: "GL_FLOAT"
@@ -695,6 +794,7 @@ proc glTypeToStr*(glType: GLenum): string =
   else:
     "Unknown (" & $glType.int & ")"
 
+
 proc activateAllAttributes*(programId: GLuint, report = false) =
   ## Enable all attributes used in this program.
   let attributes = programId.getAttributes
@@ -704,9 +804,11 @@ proc activateAllAttributes*(programId: GLuint, report = false) =
     glEnableVertexAttribArray(attr.id.GLuint)
     if report: echo " ", attr
 
+
 #-----
 # Demo
 #-----
+
 
 when isMainModule:
   # This demo assumes SDL2.dll is in the current working directory.
