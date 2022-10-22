@@ -82,25 +82,34 @@ template scaleVBOArray*(modelId: ModelId): untyped = modelId.scaleVBO.toArray(3)
 template rotationVBOArray*(modelId: ModelId): untyped = modelId.rotationVBO.toArray(1)
 template colVBOArray*(modelId: ModelId): untyped = modelId.colVBO.toArray(4)
 
+
 proc modelCount*: int = models.len
+
 
 template modelByIndex*(index: int): ModelId = index.ModelId
 
+
 template vao*(modelId: ModelId): VertexArrayObject = models[modelId.int].vao
+
 
 iterator allModels*: ModelId =
   for i in 0 ..< models.len: yield i.ModelId
 
+
 proc newModelRenderer*: ShaderProgramId = newShaderProgramId(vertexGLSL, fragmentGLSL)
+
 
 proc programId*(modelId: ModelId): ShaderProgramId =
   models[modelId.int].programId
+
+proc `==`*(shader1, shader2: ShaderProgramId): bool = shader1.int == shader2.int
 
 proc setTransform*(modelId: ModelId, matrix: GLmatrixf4) =
   ## Set the transformation matrix applied to vertices for this model.
   var m = matrix
   modelId.programId.activate
   models[modelId.int].transform.setMat4 m
+
 
 proc setTransform*(matrix: GLmatrixf4) =
   ## Set the transformation matrix applied to vertices for all models.
@@ -109,7 +118,8 @@ proc setTransform*(matrix: GLmatrixf4) =
     models[modelId.int].programId.activate
     models[modelId.int].transform.setMat4 m
 
-proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3], colours: openarray[GLvectorf4], aspectRatio = 1.0): ModelId =
+
+proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3], colours: openarray[GLvectorf4]): ModelId =
   ## Create a new model attached to a shader program.
   models.add ModelStorage(
     programId: shaderProgramId,
@@ -142,6 +152,19 @@ proc newModel*(shaderProgramId: ShaderProgramId, vertices: openarray[GLvectorf3]
 
   result.setTransform mat4(1.0)
 
+
+proc getVertices*(modelId: ModelId): seq[GLvectorf3] =
+  models[modelId.int].vao.buffers[VertexBufferIndex].getData(3)
+
+
+proc getCols*(modelId: ModelId): seq[GLvectorf4] =
+  models[modelId.int].vao.buffers[VertexColBufferIndex].getData(4)
+
+
+proc copyModel*(shaderProgramId: ShaderProgramId, modelId: ModelId): ModelId =
+  shaderProgramId.newModel(modelId.getVertices, modelId.getCols)
+
+
 proc setMaxInstanceCount*(modelId: ModelId, count: int) =
   ## Does not set current instance counts.
   modelId.positionVBO.allocate(count, fcThree)
@@ -149,8 +172,10 @@ proc setMaxInstanceCount*(modelId: ModelId, count: int) =
   modelId.rotationVBO.allocate(count, fcOne)
   modelId.colVBO.allocate(count, fcFour)
 
+
 template maxInstanceCount*(modelId: ModelId): int =
   models[modelId.int].vao.buffers[PositionBufferIndex].dataLen
+
 
 proc updateInstance*(modelId: ModelId, index: int, item: ModelInstanceDetails) =
   assert index in 0 ..< modelId.positionVBO.dataLen
@@ -159,10 +184,12 @@ proc updateInstance*(modelId: ModelId, index: int, item: ModelInstanceDetails) =
   modelId.rotationVBOArray[index] = [item.angle]
   modelId.colVBOArray[index] = item.col
 
-template bindModel(modelId: ModelId) =
+
+template bindModel*(modelId: ModelId) =
   template model: untyped = models[modelId.int]
   programs[model.programId.int].activate
   model.vao.bindArray
+
 
 proc renderModelCore(modelId: ModelId, count: Natural) =
   ## Render all models/programs.
@@ -178,17 +205,22 @@ proc renderModelCore(modelId: ModelId, count: Natural) =
 
   model.vao.buffers[VertexBufferIndex].render(count)
 
+
 template renderModelSetup*(modelId: ModelId, count: Natural, setup: untyped) =
   mixin bindModel
+  modelId.programId.activate
   modelId.bindModel
   template model: auto = modelId
   setup
   renderModelCore(modelId, count)
 
+
 proc renderModel*(modelId: ModelId, count: Natural) =
   ## Render a particular model.
+  modelId.programId.activate
   modelId.bindModel
   renderModelCore(modelId, count)
+
 
 proc renderModels* =
   ## Render all models/programs.
@@ -196,13 +228,15 @@ proc renderModels* =
     let maxSize = models[modelIndex].vao.buffers[PositionBufferIndex].dataLen
     modelIndex.ModelId.renderModel(maxSize)
 
+
 import random
 from math import TAU, cos, sin
+
 
 proc makeCircleModel*(shaderProgram: ShaderProgramId, triangles: int, insideCol, outsideCol: GLvectorf4, roughness = 0.0, maxInstances = 0): ModelId =
   ## Create a coloured model with `triangles` sides.
   let angleInc = TAU / triangles.float
-  const radius = 1.0
+  const radius = 0.5
   var
     model = newSeq[GLvectorf3](triangles * 3)
     colours = newSeq[GLvectorf4](triangles * 3)
@@ -234,10 +268,12 @@ proc makeCircleModel*(shaderProgram: ShaderProgramId, triangles: int, insideCol,
     r.setMaxInstanceCount(maxInstances)
   r
 
+
 type
   Coordinate2d = concept c
     c.x is SomeFloat
     c.y is SomeFloat
+
 
 proc makePolyModel*[T: Coordinate2d](shaderProgram: ShaderProgramId, verts: openarray[T], cols: openarray[GLvectorf4], maxInstances = 0): ModelId =
   ## Create a polygon model.
@@ -283,6 +319,7 @@ proc makeRectangleModel*(shaderProgram: ShaderProgramId, col: GLvectorf4, w, h =
     rectCols[i] = col
 
   result = newModel(shaderProgram, rectVerts, rectCols)
+
   if maxInstances > 0:
     result.setMaxInstanceCount(maxInstances)
 
