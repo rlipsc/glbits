@@ -16,6 +16,7 @@ type
 template vec2*(x, y: SomeInteger|SomeFloat): GLvectorf2 = [x.GLfloat, y.GLfloat]
 template vec3*(x, y, z: SomeInteger|SomeFloat): GLvectorf3 = [x.GLfloat, y.GLfloat, z.GLfloat]
 template vec4*(r, g, b, a: SomeInteger|SomeFloat): GLvectorf4 = [r.GLfloat, g.GLfloat, b.GLfloat, a.GLfloat]
+template vec4*(rgb: GLvectorf3, a: SomeInteger|SomeFloat): GLvectorf4 = [rgb[0], rgb[1], rgb[2], a.GLfloat]
 
 template vec2*(v: SomeInteger|SomeFloat): GLvectorf2 = [v.GLfloat, v.GLfloat]
 template vec3*(v: SomeInteger|SomeFloat): GLvectorf3 = [v.GLfloat, v.GLfloat, v.GLfloat]
@@ -66,6 +67,9 @@ func brighten*[T: GLvectorf3|GLvectorf4](colour: T, value: GLfloat): T =
   result[2] = colour[2] * value
   when colour is GLVectorf4:
     result[3] = colour[3]
+
+func withAlpha*(col: GLvectorf4, alpha: GLfloat): GLvectorf4 =
+  vec4(col.r, col.g, col.b, alpha)
 
 func sqrLen*(v: openarray[GLfloat]): GLfloat {.inline.} =
   for i in 0 ..< v.len:
@@ -229,9 +233,9 @@ func reflect*(incident, normal: GLvectorf2): GLvectorf2 =
   let d = 2.0 * dot(normal, incident)
   result = vec2(incident[0] - d * normal[0], incident[1] - d * normal[1])
 
-#-------------------------------------------------------------------------------------
-# Mix and step support: Linear & Hermite interpolation over GLfloat values and arrays.
-#-------------------------------------------------------------------------------------
+#------------------------------------------------------------------------------------
+# Mix and step support: Linear & Hermite interpolation over GLfloat values and arrays
+#------------------------------------------------------------------------------------
 
 template mix*(x, y, a: float|GLfloat): float =
   ## Mix two floats according to `a`.
@@ -250,8 +254,10 @@ func mix*[N: static[int], T: array[N, GLfloat]](v1, v2: T, a: GLfloat): T {.inli
   for i in 0 ..< N:
     result[i] = v1[i] * (1.0 - a) + v2[i] * a
 
-func mix*(items: openarray[GLVectorf4], a: float): GLVectorf4 =
-  ## Mix over a set of colours with a normalised `a`.
+func mixSelect*[N: static[int], T: array[N, GLfloat]](items: openarray[T], a: float): T =
+  ## Interpolate a list of vectors with a normalised `a`.
+  ## Neighbouring values are mixed together by how close their index
+  ## is to `a`.
   a.assertNormalised()
   let
     i1 = int(a * items.high.float)
@@ -260,6 +266,11 @@ func mix*(items: openarray[GLVectorf4], a: float): GLVectorf4 =
     valueIntoItem = a mod fracPerItem
     normIntoItem = valueIntoItem / fracPerItem
   items[i1].mix(items[i2], normIntoItem)
+
+func select*[N: static[int], T: array[N, GLfloat]](items: openarray[T], a: float): T =
+  ## Select a vector using a normalised index.
+  assert items.len > 0, "No items to select from"
+  items[clamp(int(a * float(items.high)), 0, items.high)]
 
 func smoothStep*[T: Somefloat](x, y, a: T): T {.inline.} =
   ## Smooth Hermite interpolation between two values.
@@ -364,7 +375,7 @@ proc asLength*[T: GLVector](v: T, length: float | GLfloat): T {.noInit} =
 func rotate90L*(original: GLVectorf2): GLVectorf2 = vec2(original[1], -original[0])
 func rotate90R*(original: GLVectorf2): GLVectorf2 = vec2(-original[1], original[0])
 
-template vector*(angle: float, length: float): GLvectorf2 =
+template vector*(angle: float, length = 1.0): GLvectorf2 =
   [(length * cos(angle)).GLfloat, length * sin(angle)]
 
 proc toAngle*(vec: GLVectorf2): float = arcTan2 vec.y, vec.x
